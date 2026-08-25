@@ -1,0 +1,312 @@
+// =============================================================================
+// Event Manager — Prisma schema (source of truth)
+// Database: PostgreSQL.
+//
+// Prisma 7 notes:
+// - The connection URL does NOT live in this file. The CLI reads it from
+//   prisma.config.ts; the runtime client receives it through the PrismaPg
+//   driver adapter (see src/database/prisma.service.ts).
+// - Credentials are managed by Supabase Auth. This database NEVER stores
+//   passwords or password hashes — only the link to the Supabase identity.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// Roles supported by the app today (matches the frontend contract:
+// 'ADMIN' | 'ATTENDEE'). Additional roles (e.g. door staff) can be added
+// later without a redesign.
+enum UserRole {
+  ATTENDEE
+  ADMIN
+}
+
+// Event lifecycle status (Upcoming / Ongoing / Ended) is intentionally NOT
+// stored: it is always computed from startsAt/endsAt (see PRD §5).
+// Only persisted task/notification states use enums.
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  GENERAL
+  EVENT
+  TASK
+  PASS
+}
+
+// ---------------------------------------------------------------------------
+// Users & organizations
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String   @id @default(uuid())
+  // Link to Supabase Auth (source of truth for credentials, sessions,
+  // email verification and password recovery). Never store passwords here.
+  supabaseUserId String   @unique
+  email          String   @unique
+  name           String
+  role           UserRole @default(ATTENDEE)
+  avatarUrl      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedOrganizations Organization[]
+  organizedEvents    Event[]
+  assignedTasks      Task[]
+  notifications      Notification[]
+  uploadedFiles      File[]
+  checkIns           CheckIn[]
+
+  @@map("users")
+}
+
+// A company/organization owns halls and events (PRD §4.3, §6).
+model Organization {
+  id           String  @id @default(uuid())
+  name         String
+  logoUrl      String?
+  brandColor   String?
+  address      String?
+  contactEmail String?
+  contactPhone String?
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+  halls  Hall[]
+
+  @@index([ownerId])
+  @@map("organizations")
+}
+
+// ---------------------------------------------------------------------------
+// Halls & events
+// ---------------------------------------------------------------------------
+
+// A hall belongs to an organization and can be reused across many events
+// (at different times). One event has at most one hall.
+model Hall {
+  id          String  @id @default(uuid())
+  name        String
+  address     String?
+  description String?
+  capacity    Int     @default(0)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+
+  @@index([organizationId])
+  @@map("halls")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  location    String?
+  category    String?
+  startsAt    DateTime
+  endsAt      DateTime
+
+  // Branding shown on QR passes (PRD §4.2).
+  logoUrl    String?
+  brandColor String?
+
+  // Public self-registration switch + optional capacity cap (PRD §4.4).
+  publicRegistrationEnabled Boolean @default(false)
+  capacity                  Int?
+
+  // Hall assignment is manual and may happen at any time (PRD §4.3),
+  // hence optional. Deleting a hall detaches it instead of breaking events.
+  hallId String?
+  hall   Hall?   @relation(fields: [hallId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  // Organizer → Events (1..*). Deleting an organizer never silently
+  // destroys event data.
+  organizerId String
+  organizer   User   @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendees Attendee[]
+  tasks     Task[]
+
+  @@index([organizerId])
+  @@index([organizationId])
+  @@index([startsAt])
+  // Supports backend enforcement of hall double-booking checks.
+  @@index([hallId, startsAt, endsAt])
+  @@map("events")
+}
+
+// ---------------------------------------------------------------------------
+// Attendees & QR passes (PRD §4.4, §4.5, §7)
+// ---------------------------------------------------------------------------
+
+// Attendees are people attending an event; they are NOT necessarily app
+// users, so this is not a User↔Event registration join table.
+model Attendee {
+  id       String @id @default(uuid())
+  name     String
+  email    String
+  passType String @default("General")
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passes Pass[]
+
+  @@unique([eventId, email])
+  @@index([eventId])
+  @@map("attendees")
+}
+
+// Exactly one ACTIVE pass per attendee (enforced by the service layer by
+// revoking the old pass before issuing a new one — PRD §7). The pass id is
+// the random, unguessable identifier encoded in the QR code; it is signed
+// at generation time and the signature is verified at scan time.
+model Pass {
+  id String @id @default(uuid())
+
+  attendeeId String
+  attendee   Attendee @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
+
+  // Non-null when the pass has been superseded by a regenerated one.
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  checkIn CheckIn?
+
+  @@index([attendeeId])
+  @@map("passes")
+}
+
+// One check-in per pass: the unique constraint makes double check-ins
+// impossible at the database level (PRD §4.6).
+model CheckIn {
+  id String @id @default(uuid())
+
+  passId String @unique
+  pass   Pass   @relation(fields: [passId], references: [id], onDelete: Cascade)
+
+  // Door staff member who scanned (kept for the audit log; may be absent
+  // for self/manual flows).
+  scannedById String?
+  scannedBy   User?   @relation(fields: [scannedById], references: [id], onDelete: SetNull)
+
+  scannedAt DateTime @default(now())
+
+  @@index([scannedAt])
+  @@map("check_ins")
+}
+
+// ---------------------------------------------------------------------------
+// Tasks (event-related work items)
+// ---------------------------------------------------------------------------
+
+model Task {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueAt       DateTime?
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  assignedToId String?
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([assignedToId])
+  @@index([status])
+  @@map("tasks")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id      String           @id @default(uuid())
+  title   String
+  message String
+  type    NotificationType @default(GENERAL)
+  // NULL readAt == unread; the composite index below makes "unread inbox"
+  // lookups efficient.
+  readAt  DateTime?
+
+  recipientId String
+  recipient   User   @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([recipientId, readAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// File metadata (logos, banners, pass images — PRD §8)
+// ---------------------------------------------------------------------------
+
+// Files themselves live in S3-compatible object storage; PostgreSQL stores
+// metadata only.
+model File {
+  id           String @id @default(uuid())
+  originalName String
+  mimeType     String
+  size         Int
+  storageKey   String @unique
+
+  uploadedById String?
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadedById])
+  @@map("files")
+}
