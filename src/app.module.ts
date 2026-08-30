@@ -5,6 +5,8 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PrismaModule } from './database/prisma.module';
 import { UsersModule } from './users/users.module';
+import { EventsModule } from './events/events.module';
+import { HallsModule } from './halls/halls.module';
 
 /**
  * Root module.
@@ -22,6 +24,8 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     UsersModule,
     AuthModule,
+    EventsModule,
+    HallsModule,
   ],
   providers: [
     {
