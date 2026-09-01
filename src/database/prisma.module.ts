@@ -1,10 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 
-/**
- * Global module so every feature module can inject {@link PrismaService}
- * without re-importing it. All database access goes through Prisma.
- */
+
 @Global()
 @Module({
   providers: [PrismaService],

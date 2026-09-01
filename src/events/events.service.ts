@@ -8,14 +8,14 @@ import { AssignHallDto } from './dto/assign-hall.dto';
 export class EventsService {constructor(private prisma: PrismaService) {}
 
  async create(dto: CreateEventDto, organizerId: string) {
-  const organization = await this.prisma.organization.findFirst({
-    where: { ownerId: organizerId },
-    select: { id: true },
-  });
+   const organization = await this.prisma.organization.findFirst({
+     where: { ownerId: organizerId },
+     select: { id: true },
+   });
 
-  if (!organization) {
-    throw new BadRequestException('User does not own an organization');
-  }
+   if (!organization) {
+     throw new BadRequestException('User does not own an organization');
+   }
 
 const {
     date,
@@ -30,29 +30,31 @@ const {
     hallId,
   } = dto;
 
+  // Optional hall assignment is validated before creating the event.
   if (hallId) {
     const hall = await this.prisma.hall.findUnique({
       where: { id: hallId },
     });
 
-  if (!hall) {
+    if (!hall) {
       throw new NotFoundException('Hall not found');
-  }
+    }
 
-const conflictingEvent = await this.prisma.event.findFirst({
-  where: {
-    hallId,
-    startsAt: {lt: endsAt},
-    endsAt: {gt: startsAt},
-},
-});
+    const conflictingEvent = await this.prisma.event.findFirst({
+      where: {
+        hallId,
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+      },
+    });
 
     if (conflictingEvent) {
       throw new BadRequestException('This hall is already booked for this time.');
-}
+    }
+  }
 
   return this.prisma.event.create({
-  data: {
+    data: {
       date,
       description,
       title,
@@ -64,10 +66,10 @@ const conflictingEvent = await this.prisma.event.findFirst({
       brandColor,
       organizerId,
       organizationId: organization.id,
-      hallId: hallId ?? null},
-  include: { organizer: true, hall: true },
+      hallId: hallId ?? null,
+    },
+    include: { organizer: true, hall: true },
   });
-}
 }
 
 

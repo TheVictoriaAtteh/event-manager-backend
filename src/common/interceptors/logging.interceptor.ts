@@ -8,9 +8,7 @@ import {
 import type { Request } from 'express';
 import { Observable, tap } from 'rxjs';
 
-/**
- * Logs every incoming request with its method, URL and processing time.
- */
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');

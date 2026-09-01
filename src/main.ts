@@ -10,8 +10,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
-  // Strict request validation: strip unknown properties, reject requests
-  // with non-whitelisted properties, and transform payloads to DTO types.
+  
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -25,7 +24,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   // Allow the configured frontend origin(s) — comma-separated FRONTEND_URL.
-  const corsOrigins = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:5173')
+  const corsOrigins = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);

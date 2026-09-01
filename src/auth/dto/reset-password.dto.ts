@@ -1,13 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
-/**
- * Accepts the credential carried by the Supabase "recovery" email link
- * (`tokenHash`/legacy `token`+`email` for the implicit flow, `code` for
- * PKCE) plus the new password.
- *
- * "At least one credential present" is enforced by AuthService.
- */
 export class ResetPasswordDto {
   @ApiPropertyOptional({
     description: 'Required when using the legacy 6-digit token',

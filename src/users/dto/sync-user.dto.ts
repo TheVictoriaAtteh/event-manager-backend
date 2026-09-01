@@ -1,10 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 
-/**
- * Data used to create/update the local mirror of a Supabase Auth user.
- * Credentials are NEVER part of this DTO — Supabase Auth owns them.
- */
+
 export class SyncUserDto {
   @ApiProperty({ description: 'Supabase Auth user id (uuid)' })
   @IsString()

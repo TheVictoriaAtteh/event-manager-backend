@@ -1,10 +1,7 @@
 import { type INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
-/**
- * Configures Swagger/OpenAPI documentation. Shared by `main.ts` and the
- * e2e tests so both expose the exact same documentation.
- */
+
 export function setupSwagger(app: INestApplication): void {
   const document = SwaggerModule.createDocument(
     app,

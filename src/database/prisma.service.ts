@@ -8,16 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-/**
- * Provides the Prisma Client to the whole application via dependency
- * injection. Exported globally by {@link PrismaModule}.
- *
- * Prisma 7: the client is built with the PrismaPg driver adapter; the
- * connection string comes exclusively from the DATABASE_URL environment
- * variable. Connections are opened lazily on the first query, so the API
- * can boot before PostgreSQL becomes reachable (useful in containerized
- * deployments). `$disconnect` is called on application shutdown.
- */
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);

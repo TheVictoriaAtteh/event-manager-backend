@@ -3,10 +3,12 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
 import { PrismaModule } from './database/prisma.module';
 import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { HallsModule } from './halls/halls.module';
+import { AttendeesModule } from './attendees/attendees.module';
 
 /**
  * Root module.
@@ -17,6 +19,7 @@ import { HallsModule } from './halls/halls.module';
  *
  * JwtAuthGuard is applied globally: every route requires a valid JWT unless
  * it is decorated with @Public().
+ * RolesGuard enforces @Roles() decorators on protected endpoints.
  */
 @Module({
   imports: [
@@ -26,11 +29,16 @@ import { HallsModule } from './halls/halls.module';
     AuthModule,
     EventsModule,
     HallsModule,
+    AttendeesModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })

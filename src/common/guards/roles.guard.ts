@@ -3,10 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { RequestUser } from '../decorators/current-user.decorator';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
-/**
- * Enforces role-based access on routes decorated with `@Roles(...)`.
- * Requires that the JWT guard has already run and populated `request.user`.
- */
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}

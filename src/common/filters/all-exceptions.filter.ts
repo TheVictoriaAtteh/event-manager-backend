@@ -16,10 +16,7 @@ interface ResolvedError {
   [key: string]: unknown;
 }
 
-/**
- * Global exception filter. Normalizes every thrown error into a consistent
- * JSON envelope and maps well-known Prisma errors to proper HTTP statuses.
- */
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);

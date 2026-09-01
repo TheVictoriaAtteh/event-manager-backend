@@ -15,17 +15,7 @@ export interface SupabaseSignUpParams {
   emailRedirectTo: string;
 }
 
-/**
- * Thin, typed wrapper around the Supabase Auth API.
- *
- * Two clients are created from environment variables:
- * - an **anon** client for public flows (sign-up, sign-in, refresh);
- * - an **admin** client (service-role key, SERVER-SIDE ONLY) for OTP
- *   verification and authoritative user lookups.
- *
- * Keys are read from the environment once and are never logged or returned
- * in any response.
- */
+
 @Injectable()
 export class SupabaseService implements OnModuleInit {
   private anonClient!: SupabaseClient;
@@ -60,10 +50,7 @@ export class SupabaseService implements OnModuleInit {
     });
   }
 
-  /**
-   * Public sign-up: creates the user in Supabase Auth and triggers the
-   * confirmation email (when "Confirm email" is enabled in the dashboard).
-   */
+  
   signUp(params: SupabaseSignUpParams): Promise<AuthResponse> {
     return this.anonClient.auth.signUp({
       email: params.email,
@@ -75,17 +62,17 @@ export class SupabaseService implements OnModuleInit {
     });
   }
 
-  /** Public password sign-in. */
+  
   signInWithPassword(email: string, password: string): Promise<AuthResponse> {
     return this.anonClient.auth.signInWithPassword({ email, password });
   }
 
-  /** Exchanges a Supabase refresh token for a fresh session. */
+  
   refreshSession(refreshToken: string): Promise<AuthResponse> {
     return this.anonClient.auth.refreshSession({ refresh_token: refreshToken });
   }
 
-  /** Re-sends the signup confirmation email (generic success by design). */
+  
   resendConfirmationEmail(email: string, emailRedirectTo: string) {
     return this.anonClient.auth.resend({
       email,
@@ -94,14 +81,14 @@ export class SupabaseService implements OnModuleInit {
     });
   }
 
-  /** Sends the Supabase-managed "reset password" email. */
+  
   resetPasswordForEmail(email: string, emailRedirectTo: string) {
     return this.anonClient.auth.resetPasswordForEmail(email, {
       redirectTo: emailRedirectTo,
     });
   }
 
-  /** Server-side OTP verification (token_hash / legacy token). */
+  
   verifyOtp(params: {
     email?: string;
     tokenHash?: string;
@@ -120,26 +107,22 @@ export class SupabaseService implements OnModuleInit {
         });
   }
 
-  /** Updates a user's password (service-role). Used for password resets. */
+  
   updateUserPassword(userId: string, password: string): Promise<UserResponse> {
     return this.adminClient.auth.admin.updateUserById(userId, { password });
   }
 
-  /** PKCE flow: exchanges the `code` from the verification link. */
+  
   exchangeCodeForSession(code: string): Promise<AuthResponse> {
     return this.anonClient.auth.exchangeCodeForSession(code);
   }
 
-  /** Authoritative lookup of a Supabase Auth user (service-role). */
+  
   getUserById(id: string): Promise<UserResponse> {
     return this.adminClient.auth.admin.getUserById(id);
   }
 
-  /**
-   * Validates a Supabase access_token that the user's browser received
-   * directly in the confirmation URL hash (implicit-flow "already signed in"
-   * link). supabase-js verifies the JWT and returns the user.
-   */
+  
   getUserByAccessToken(accessToken: string): Promise<UserResponse> {
     return this.anonClient.auth.getUser(accessToken);
   }

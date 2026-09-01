@@ -26,6 +26,14 @@ export class RegisterResponseDto {
   })
   accessToken?: string;
 
+  @ApiPropertyOptional({
+    description: 'Supabase refresh token for POST /auth/refresh (present when session exists)',
+  })
+  refreshToken?: string;
+
+  @ApiPropertyOptional({ description: 'Token lifetime in seconds (present when session exists)' })
+  expiresIn?: number;
+
   @ApiPropertyOptional({ type: AuthUserDto })
   user?: AuthUserDto;
 }

@@ -1,8 +1,4 @@
-/**
- * Boots the REAL AppModule (no network calls): verifies Swagger, the global
- * JWT guard and the global ValidationPipe. A dummy DATABASE_URL is enough
- * because Prisma connects lazily.
- */
+
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://postgres:postgres@localhost:5432/event_manager?schema=public';

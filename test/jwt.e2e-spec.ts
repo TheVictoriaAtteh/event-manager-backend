@@ -1,8 +1,4 @@
-/**
- * JWT guard behaviour: valid / invalid / expired / missing Bearer tokens.
- * Uses a minimal module (no database, no Supabase) wiring the REAL
- * JwtStrategy + JwtAuthGuard used in production.
- */
+
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'e2e-test-secret';
 
 import { Controller, Get, type INestApplication, Module } from '@nestjs/common';

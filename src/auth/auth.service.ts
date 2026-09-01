@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
@@ -36,7 +36,7 @@ interface SupabaseErrorLike {
  * Authentication orchestration.
  *
  * ALL credential management and ALL email verification live in Supabase
- * Auth — this backend never stores, hashes or verifies passwords itself and
+ * Auth â€” this backend never stores, hashes or verifies passwords itself and
  * never sends verification emails itself. After a successful Supabase
  * credential check, this backend issues its own JWT (single consistent
  * token mechanism for the API).
@@ -53,7 +53,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {
     this.frontendUrl = (
-      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:5173'
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
     ).replace(/\/+$/, '');
   }
 
@@ -99,26 +99,30 @@ export class AuthService {
 
     const verified = Boolean(supabaseUser.email_confirmed_at);
 
-    // Email confirmation disabled in the dashboard → Supabase returned a
+    // Email confirmation disabled in the dashboard -> Supabase returned a
     // session immediately; sync the user and issue our JWT right away.
     if (verified && data.session) {
+      // SECURITY: Public registration always creates ATTENDEE users; ignore
+      // any client-supplied role to prevent privilege escalation.
       const localUser = await this.syncUser(
         supabaseUser,
         dto.name,
-        dto.role ?? UserRole.ATTENDEE,
+        UserRole.ATTENDEE,
       );
+      const expiresIn = this.expiresInSeconds();
       return {
-        message: 'Registration successful.',
+        message: 'Registration successful. You are now signed in.',
         emailVerificationRequired: false,
         accessToken: await this.signToken(localUser),
+        refreshToken: data.session.refresh_token,
+        expiresIn,
         user: this.toAuthUser(localUser),
       };
     }
 
-    this.logger.log(`Registration pending verification for ${dto.email}`);
+    // Email verification required -> no session returned yet.
     return {
-      message:
-        'Registration successful. Please check your inbox and verify your email before signing in.',
+      message: 'Registration successful. Please check your inbox and verify your email before signing in.',
       emailVerificationRequired: true,
     };
   }

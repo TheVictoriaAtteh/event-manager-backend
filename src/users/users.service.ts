@@ -3,20 +3,12 @@ import { UserRole, type User } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import type { SyncUserDto } from './dto/sync-user.dto';
 
-/**
- * Maintains the application-side mirror of Supabase Auth users.
- * Supabase Auth is the source of truth for credentials; this service only
- * stores profile/role data and the unique link to the Supabase identity.
- */
+
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Upserts the local user record for a Supabase Auth user
-   * (keyed by `supabaseUserId`). The role is only applied when the record
-   * is first created — it is never overwritten by later syncs.
-   */
+  
   async createOrUpdate(dto: SyncUserDto, role?: UserRole): Promise<User> {
     return this.prisma.user.upsert({
       where: { supabaseUserId: dto.supabaseUserId },

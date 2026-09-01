@@ -1,14 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
-/**
- * Accepts the credential carried by a Supabase verification link:
- * - `tokenHash` (or legacy `token` + `email`) for the implicit flow —
- *   checked via Supabase `verifyOtp`;
- * - `code` for the PKCE flow — exchanged via Supabase.
- *
- * "At least one credential present" is enforced by AuthService.
- */
+
 export class VerifyEmailDto {
   @ApiPropertyOptional({
     description: 'Required when using the legacy 6-digit token',
