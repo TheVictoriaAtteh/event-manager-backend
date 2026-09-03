@@ -18,6 +18,7 @@ import {
 } from './dto/auth-response.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
+import { OAuthCallbackDto } from './dto/oauth-callback.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
@@ -145,6 +146,31 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto);
+  }
+
+  @Public()
+  @Get('oauth/google')
+  @ApiOperation({
+    summary: 'Initiate Google OAuth sign-in',
+    description: 'Returns the Google authorization URL to redirect the user to',
+  })
+  @ApiOkResponse({ schema: { type: 'object', properties: { url: { type: 'string' } } } })
+  initiateGoogleOAuth() {
+    return this.authService.initiateOAuth('google');
+  }
+
+  @Public()
+  @Post('oauth/callback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Handle OAuth callback',
+    description: 'Exchanges the authorization code for a session and returns a JWT',
+  })
+  @ApiBody({ type: OAuthCallbackDto })
+  @ApiOkResponse({ type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'OAuth authentication failed' })
+  handleOAuthCallback(@Body() dto: OAuthCallbackDto) {
+    return this.authService.handleOAuthCallback(dto.code);
   }
 
   @Get('me')

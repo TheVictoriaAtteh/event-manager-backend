@@ -126,6 +126,26 @@ export class SupabaseService implements OnModuleInit {
   getUserByAccessToken(accessToken: string): Promise<UserResponse> {
     return this.anonClient.auth.getUser(accessToken);
   }
+
+  /**
+   * Initiate OAuth sign-in with Google.
+   * Returns the authorization URL to redirect the user to.
+   */
+  async signInWithOAuth(provider: 'google'): Promise<{ url: string }> {
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const { data, error } = await this.anonClient.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${frontendUrl.replace(/\/$/, '')}/auth/callback`,
+      },
+    });
+
+    if (error || !data.url) {
+      throw new Error(`OAuth initialization failed: ${error?.message ?? 'No URL returned'}`);
+    }
+
+    return { url: data.url };
+  }
 }
 
 export type SupabaseUser = User;

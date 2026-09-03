@@ -300,6 +300,53 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------
+  // OAuth (Google Sign-In)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Initiate OAuth flow with Google.
+   * Returns the authorization URL for the frontend to redirect to.
+   */
+  async initiateOAuth(provider: 'google'): Promise<{ url: string }> {
+    return this.supabase.signInWithOAuth(provider);
+  }
+
+  /**
+   * Handle OAuth callback after Google authentication.
+   * Exchanges the authorization code for a Supabase session,
+   * syncs the user to the local database, and issues a JWT.
+   */
+  async handleOAuthCallback(code: string) {
+    // Exchange code for session
+    const { data, error } = await this.supabase.exchangeCodeForSession(code);
+
+    if (error || !data.session?.user) {
+      this.logger.error(`OAuth callback failed: ${error?.message ?? 'No session'}`);
+      throw new UnauthorizedException({
+        message: 'OAuth authentication failed',
+        code: 'OAUTH_FAILED',
+      });
+    }
+
+    const supabaseUser = data.session.user;
+
+    // Sync user to local database (OAuth users default to ATTENDEE role)
+    const localUser = await this.syncUser(supabaseUser, UserRole.ATTENDEE);
+
+    // Issue backend JWT
+    const accessToken = await this.signToken(localUser);
+    const expiresIn = this.expiresInSeconds();
+
+    return {
+      accessToken,
+      tokenType: 'Bearer',
+      expiresIn,
+      refreshToken: data.session.refresh_token ?? '',
+      user: this.toAuthUser(localUser),
+    };
+  }
+
+  // ---------------------------------------------------------------------
   // Token refresh
   // ---------------------------------------------------------------------
 
