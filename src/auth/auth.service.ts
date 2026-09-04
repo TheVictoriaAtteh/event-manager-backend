@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
@@ -11,7 +11,6 @@
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { UserRole, type User } from '@prisma/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { UsersService } from '../users/users.service';
@@ -24,7 +23,6 @@ import type { ResendVerificationDto } from './dto/resend-verification.dto';
 import type { ResetPasswordDto } from './dto/reset-password.dto';
 import type { VerifyEmailDto } from './dto/verify-email.dto';
 import type { VerifySessionDto } from './dto/verify-session.dto';
-import type { JwtPayload } from './interfaces/jwt-payload.interface';
 import { SupabaseService } from './supabase.service';
 
 interface SupabaseErrorLike {
@@ -35,11 +33,14 @@ interface SupabaseErrorLike {
 /**
  * Authentication orchestration.
  *
- * ALL credential management and ALL email verification live in Supabase
- * Auth â€” this backend never stores, hashes or verifies passwords itself and
- * never sends verification emails itself. After a successful Supabase
- * credential check, this backend issues its own JWT (single consistent
- * token mechanism for the API).
+ * ALL credential management and ALL email verification live in Supabase Auth.
+ * This backend never stores, hashes or verifies passwords itself and never
+ * sends verification emails itself.
+ *
+ * After a successful Supabase credential check, the Supabase-issued
+ * access_token is returned directly to the frontend — this backend no longer
+ * signs its own tokens. Incoming Bearer tokens are validated by JwtStrategy
+ * using SUPABASE_JWT_SECRET (passport-jwt handles the HS256 verification).
  */
 @Injectable()
 export class AuthService {
@@ -49,7 +50,6 @@ export class AuthService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly usersService: UsersService,
-    private readonly jwtService: JwtService,
     private readonly config: ConfigService,
   ) {
     this.frontendUrl = (
@@ -109,13 +109,12 @@ export class AuthService {
         dto.name,
         UserRole.ATTENDEE,
       );
-      const expiresIn = this.expiresInSeconds();
       return {
         message: 'Registration successful. You are now signed in.',
         emailVerificationRequired: false,
-        accessToken: await this.signToken(localUser),
+        accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
-        expiresIn,
+        expiresIn: data.session.expires_in,
         user: this.toAuthUser(localUser),
       };
     }
@@ -160,13 +159,14 @@ export class AuthService {
 
     const localUser = await this.syncUser(supabaseUser);
     return {
-      accessToken: await this.signToken(localUser),
+      accessToken: session.access_token,
       tokenType: 'Bearer',
-      expiresIn: this.expiresInSeconds(),
+      expiresIn: session.expires_in,
       refreshToken: session.refresh_token,
       user: this.toAuthUser(localUser),
     };
   }
+
 
   // ---------------------------------------------------------------------
   // Email verification (Supabase owns the tokens; we only relay them)
@@ -206,10 +206,23 @@ export class AuthService {
     }
 
     const localUser = await this.syncUser(supabaseUser);
+
+    // Decode exp claim from the Supabase JWT without verifying signature.
+    let expiresIn = 3600;
+    try {
+      const payloadB64 = dto.accessToken.split('.')[1];
+      if (payloadB64) {
+        const decoded = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+        if (decoded.exp) {
+          expiresIn = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
+        }
+      }
+    } catch { /* ignore malformed payload — default to 3600 */ }
+
     return {
-      accessToken: await this.signToken(localUser),
+      accessToken: dto.accessToken,
       tokenType: 'Bearer',
-      expiresIn: this.expiresInSeconds(),
+      expiresIn: expiresIn,
       refreshToken: dto.refreshToken,
       user: this.toAuthUser(localUser),
     };
@@ -333,14 +346,10 @@ export class AuthService {
     // Sync user to local database (OAuth users default to ATTENDEE role)
     const localUser = await this.syncUser(supabaseUser, UserRole.ATTENDEE);
 
-    // Issue backend JWT
-    const accessToken = await this.signToken(localUser);
-    const expiresIn = this.expiresInSeconds();
-
     return {
-      accessToken,
+      accessToken: data.session.access_token,
       tokenType: 'Bearer',
-      expiresIn,
+      expiresIn: data.session.expires_in,
       refreshToken: data.session.refresh_token ?? '',
       user: this.toAuthUser(localUser),
     };
@@ -362,9 +371,9 @@ export class AuthService {
 
     const localUser = await this.syncUser(data.user);
     return {
-      accessToken: await this.signToken(localUser),
+      accessToken: data.session.access_token,
       tokenType: 'Bearer',
-      expiresIn: this.expiresInSeconds(),
+      expiresIn: data.session.expires_in,
       refreshToken: data.session.refresh_token,
       user: this.toAuthUser(localUser),
     };
@@ -459,39 +468,19 @@ export class AuthService {
           ? metadata.picture
           : undefined;
 
-    return this.usersService.createOrUpdate(
+    const user = await this.usersService.createOrUpdate(
       { supabaseUserId: supabaseUser.id, email, name, avatarUrl },
       role,
     );
+
+    // Ensure the user owns at least one Organization so that event and hall
+    // creation work immediately for any newly registered or first-time user.
+    await this.usersService.ensureOrganization(user);
+
+    return user;
   }
 
-  private async signToken(user: User): Promise<string> {
-    const payload: JwtPayload = {
-      sub: user.id,
-      supabaseUserId: user.supabaseUserId,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-    };
-    return this.jwtService.signAsync(payload);
-  }
 
-  private expiresInSeconds(): number {
-    const raw = this.config.get<string>('JWT_EXPIRES_IN') ?? '1d';
-    const match = /^(\d+)\s*(s|m|h|d)?$/i.exec(raw.trim());
-    if (!match) return 86400;
-    const value = Number(match[1]);
-    switch ((match[2] ?? 's').toLowerCase()) {
-      case 'm':
-        return value * 60;
-      case 'h':
-        return value * 3600;
-      case 'd':
-        return value * 86400;
-      default:
-        return value;
-    }
-  }
 
   private toAuthUser(user: User): AuthUserDto {
     return {

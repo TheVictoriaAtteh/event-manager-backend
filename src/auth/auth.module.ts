@@ -1,8 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import type { StringValue } from 'ms';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -13,16 +10,9 @@ import { SupabaseService } from './supabase.service';
   imports: [
     UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: (config.get<string>('JWT_EXPIRES_IN') ??
-            '1d') as StringValue,
-        },
-      }),
-    }),
+    // JwtModule is intentionally NOT imported here.
+    // Token signing has been removed — we return Supabase-issued tokens directly.
+    // Token validation is handled by passport-jwt in JwtStrategy using SUPABASE_JWT_SECRET.
   ],
   controllers: [AuthController],
   providers: [AuthService, SupabaseService, JwtStrategy],

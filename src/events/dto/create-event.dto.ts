@@ -31,5 +31,6 @@ export class CreateEventDto {
   capacity!: number;
 
   @IsOptional()
+  @IsString()
   hallId?: string;
 }

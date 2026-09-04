@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CreateHallDto } from './dto/create-hall.dto';
 import { UpdateHallDto } from './dto/update-hall.dto';
@@ -21,6 +21,7 @@ export class HallsService {
     const {
       name,
       address,
+      description,
       capacity,
     } = dto
 
@@ -28,18 +29,33 @@ export class HallsService {
       data: {
         name,
         address,
+        description,
         capacity,
         organization: {
-        connect: { id: organization.id },
-      },
+          connect: { id: organization.id },
+        },
       },
     });
   }
 
-async findAll() {
-    return this.prisma.hall.findMany();
-    
-}
+  async findAll(ownerId: string) {
+    const organization = await this.prisma.organization.findFirst({
+      where: { ownerId },
+      select: { id: true },
+    });
+
+    if (!organization) {
+      return [];
+    }
+
+    return this.prisma.hall.findMany({
+      where: { organizationId: organization.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { events: true } },
+      },
+    });
+  }
 
   async findOne(id: string) {
     const hall = await this.prisma.hall.findUnique({
@@ -53,8 +69,19 @@ async findAll() {
     return hall;
   }
 
-  async update(id: string, updateHallDto: UpdateHallDto) {
-    await this.findOne(id);
+  async update(id: string, updateHallDto: UpdateHallDto, ownerId: string) {
+    const hall = await this.prisma.hall.findUnique({
+      where: { id },
+      include: { organization: { select: { ownerId: true } } },
+    });
+
+    if (!hall) {
+      throw new NotFoundException('Hall not found');
+    }
+
+    if (hall.organization.ownerId !== ownerId) {
+      throw new ForbiddenException('You are not authorized to modify this hall');
+    }
 
     return this.prisma.hall.update({
       where: { id },
@@ -62,8 +89,19 @@ async findAll() {
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, ownerId: string) {
+    const hall = await this.prisma.hall.findUnique({
+      where: { id },
+      include: { organization: { select: { ownerId: true } } },
+    });
+
+    if (!hall) {
+      throw new NotFoundException('Hall not found');
+    }
+
+    if (hall.organization.ownerId !== ownerId) {
+      throw new ForbiddenException('You are not authorized to delete this hall');
+    }
 
     return this.prisma.hall.delete({
       where: { id },

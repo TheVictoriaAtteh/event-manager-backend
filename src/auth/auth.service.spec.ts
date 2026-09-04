@@ -7,7 +7,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { UserRole, type User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import type { SupabaseService } from './supabase.service';
@@ -92,8 +91,6 @@ function createService() {
     findByEmail: jest.fn().mockResolvedValue(LOCAL_USER),
   };
 
-  const jwtService = { signAsync: jest.fn().mockResolvedValue('signed.jwt.token') };
-
   const config = new ConfigService({
     FRONTEND_URL: 'http://localhost:5173/',
     JWT_EXPIRES_IN: '1d',
@@ -102,11 +99,10 @@ function createService() {
   const service = new AuthService(
     supabase as unknown as SupabaseService,
     usersService as unknown as UsersService,
-    jwtService as unknown as JwtService,
     config,
   );
 
-  return { service, supabase, usersService, jwtService };
+  return { service, supabase, usersService };
 }
 
 // ---------------------------------------------------------------------------
@@ -183,14 +179,15 @@ describe('AuthService.register', () => {
   it('issues a token immediately when email confirmation is disabled', async () => {
     const { service, supabase, usersService } = createService();
     supabase.signUp.mockResolvedValue({
-      data: { user: { ...VERIFIED_SUPABASE_USER }, session: { refresh_token: 'rt-1' } },
+      data: { user: { ...VERIFIED_SUPABASE_USER }, session: { access_token: 'supa-token-reg', expires_in: 3600, refresh_token: 'rt-1' } },
       error: null,
     });
 
     const result = await service.register({ ...REGISTER_DTO, role: UserRole.ADMIN });
 
     expect(result.emailVerificationRequired).toBe(false);
-    expect(result.accessToken).toBe('signed.jwt.token');
+    expect(result.accessToken).toBe('supa-token-reg');
+    expect(result.expiresIn).toBe(3600);
     expect(usersService.createOrUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ supabaseUserId: 'supa-user-123' }),
       UserRole.ADMIN,
@@ -204,20 +201,20 @@ describe('AuthService.register', () => {
 
 describe('AuthService.login', () => {
   it('authenticates valid credentials and returns a JWT (no secrets leaked)', async () => {
-    const { service, supabase, usersService, jwtService } = createService();
+    const { service, supabase, usersService } = createService();
     supabase.signInWithPassword.mockResolvedValue({
       data: {
         user: VERIFIED_SUPABASE_USER,
-        session: { refresh_token: 'refresh-1', access_token: 'supa-token' },
+        session: { refresh_token: 'refresh-1', access_token: 'supa-token', expires_in: 3600 },
       },
       error: null,
     });
 
     const result = await service.login(LOGIN_DTO);
 
-    expect(result.accessToken).toBe('signed.jwt.token');
+    expect(result.accessToken).toBe('supa-token');
     expect(result.tokenType).toBe('Bearer');
-    expect(result.expiresIn).toBe(86400);
+    expect(result.expiresIn).toBe(3600);
     expect(result.refreshToken).toBe('refresh-1');
     expect(result.user.email).toBe(LOCAL_USER.email);
     // Frontend contract: user shape includes id/name/email/role/avatarUrl.
@@ -230,12 +227,10 @@ describe('AuthService.login', () => {
         avatarUrl: null,
       }),
     );
-    expect(jwtService.signAsync).toHaveBeenCalled();
     expect(usersService.createOrUpdate).toHaveBeenCalled();
-    // Never leak password hashes or Supabase access tokens.
+    // Never leak password hashes.
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('passwordHash');
-    expect(serialized).not.toContain('supa-token');
     expect(serialized).not.toContain(LOGIN_DTO.password);
   });
 
@@ -267,7 +262,7 @@ describe('AuthService.login', () => {
   });
 
   it('rejects unverified accounts (403, EMAIL_NOT_VERIFIED)', async () => {
-    const { service, supabase, jwtService } = createService();
+    const { service, supabase } = createService();
     supabase.signInWithPassword.mockResolvedValue({
       data: { user: null, session: null },
       error: { message: 'Email not confirmed', status: 400 },
@@ -278,7 +273,6 @@ describe('AuthService.login', () => {
     await expect(promise).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'EMAIL_NOT_VERIFIED' }),
     });
-    expect(jwtService.signAsync).not.toHaveBeenCalled();
   });
 
   it('maps a Supabase authentication failure to a generic 401', async () => {
@@ -520,7 +514,7 @@ describe('AuthService.resetPassword', () => {
 // ---------------------------------------------------------------------------
 
 describe('AuthService.verifySession', () => {
-  it('validates the Supabase token, syncs the user and issues a JWT', async () => {
+  it('validates the Supabase token, syncs the user and passes the token', async () => {
     const { service, supabase } = createService();
     supabase.getUserByAccessToken.mockResolvedValue({
       data: { user: VERIFIED_SUPABASE_USER },
@@ -532,7 +526,7 @@ describe('AuthService.verifySession', () => {
       refreshToken: 'supa-refresh-1',
     });
 
-    expect(result.accessToken).toBe('signed.jwt.token');
+    expect(result.accessToken).toBe('supa.access.token');
     expect(result.tokenType).toBe('Bearer');
     expect(result.refreshToken).toBe('supa-refresh-1');
     expect(result.user.email).toBe(LOCAL_USER.email);
@@ -561,15 +555,16 @@ describe('AuthService.verifySession', () => {
 // ---------------------------------------------------------------------------
 
 describe('AuthService.refresh', () => {
-  it('exchanges a valid refresh token for a new JWT', async () => {
+  it('exchanges a valid refresh token for a new token', async () => {
     const { service, supabase } = createService();
     supabase.refreshSession.mockResolvedValue({
-      data: { user: VERIFIED_SUPABASE_USER, session: { refresh_token: 'refresh-2' } },
+      data: { user: VERIFIED_SUPABASE_USER, session: { access_token: 'supa-access-2', expires_in: 3600, refresh_token: 'refresh-2' } },
       error: null,
     });
 
     const result = await service.refresh({ refreshToken: 'refresh-1' });
-    expect(result.accessToken).toBe('signed.jwt.token');
+    expect(result.accessToken).toBe('supa-access-2');
+    expect(result.expiresIn).toBe(3600);
     expect(result.refreshToken).toBe('refresh-2');
   });
 

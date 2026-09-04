@@ -1,0 +1,31 @@
+npm notice run event-manager-backend@0.1.0 npx
+npm notice run jest src/auth/auth.service.spec.ts --silent
+[31m[Nest] 13504  - [39m03/09/2026, 08:02:39 [31m  ERROR[39m [38;5;3m[AuthService] [39m[31mSupabase sign-up failed: internal: something exploded in gotrue[39m
+FAIL src/auth/auth.service.spec.ts (110.327 s)
+  ● AuthService.register › issues a token immediately when email confirmation is disabled
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: ObjectContaining {"supabaseUserId": "supa-user-123"}, "ADMIN"
+    Received: {"avatarUrl": undefined, "email": "jane.doe@example.com", "name": "Jane Doe", "supabaseUserId": "supa-user-123"}, "ATTENDEE"
+
+    Number of calls: 1
+
+    [0m [90m 192 |[39m     expect(result[33m.[39memailVerificationRequired)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 193 |[39m     expect(result[33m.[39maccessToken)[33m.[39mtoBe([32m'signed.jwt.token'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 194 |[39m     expect(usersService[33m.[39mcreateOrUpdate)[33m.[39mtoHaveBeenCalledWith(
+     [90m     |[39m                                         [31m[1m^[22m[39m
+     [90m 195 |[39m       expect[33m.[39mobjectContaining({ supabaseUserId[33m:[39m [32m'supa-user-123'[39m })[33m,[39m
+     [90m 196 |[39m       [33mUserRole[39m[33m.[39m[33mADMIN[39m[33m,[39m
+     [90m 197 |[39m     )[33m;[39m[0m
+
+      at Object.<anonymous> (auth/auth.service.spec.ts:194:41)
+
+[33m[Nest] 13504  - [39m03/09/2026, 08:02:39 [33m   WARN[39m [38;5;3m[AuthService] [39m[33mEmail verification failed: Token has expired or is invalid[39m
+[33m[Nest] 13504  - [39m03/09/2026, 08:02:39 [33m   WARN[39m [38;5;3m[AuthService] [39m[33mEmail verification failed: Token has expired[39m
+[33m[Nest] 13504  - [39m03/09/2026, 08:02:39 [33m   WARN[39m [38;5;3m[AuthService] [39m[33mEmail verification failed: Invalid code[39m
+[33m[Nest] 13504  - [39m03/09/2026, 08:02:39 [33m   WARN[39m [38;5;3m[AuthService] [39m[33mSession verification failed: JWT expired[39m
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 30 passed, 31 total
+Snapshots:   0 total
+Time:        121.95 s

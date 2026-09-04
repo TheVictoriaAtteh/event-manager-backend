@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -99,10 +99,16 @@ findAll() {
 }
 
 
-async update(id: string, updateEventDto: UpdateEventDto) {
-const { date, ...eventData } = updateEventDto;
+async update(id: string, updateEventDto: UpdateEventDto, organizerId: string) {
+  const event = await this.findOne(id);
+
+  if (event.organizerId !== organizerId) {
+    throw new ForbiddenException('You do not have permission to update this event');
+  }
+
+  const { date, ...eventData } = updateEventDto;
     
-return this.prisma.event.update({
+  return this.prisma.event.update({
     where: { id },
     data: {...eventData, 
     ...(date && { date }),
@@ -112,8 +118,13 @@ return this.prisma.event.update({
 }
 
 
-async remove(id: string) {
-  await this.findOne(id);
+async remove(id: string, organizerId: string) {
+  const event = await this.findOne(id);
+
+  if (event.organizerId !== organizerId) {
+    throw new ForbiddenException('You do not have permission to delete this event');
+  }
+
   return this.prisma.event.delete({ where: { id } });
 }
 
@@ -130,7 +141,7 @@ async assignHall(eventId: string, hallId: string) {
  where: { id: hallId },
  });
  if (!hall) {
- throw new Error('Hall not found');
+ throw new NotFoundException('Hall not found');
  }
 
 if (hall.organizationId !== event.organizationId) {

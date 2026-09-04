@@ -27,6 +27,28 @@ export class UsersService {
     });
   }
 
+  /**
+   * Ensures the user owns at least one Organization.
+   * Creates a default Organization on first login so that event and hall
+   * creation (which both require an Organization) work immediately.
+   * Safe to call on every login — the DB query is a cheap indexed lookup.
+   */
+  async ensureOrganization(user: User): Promise<void> {
+    const existing = await this.prisma.organization.findFirst({
+      where: { ownerId: user.id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      await this.prisma.organization.create({
+        data: {
+          name: `${user.name}'s Organization`,
+          ownerId: user.id,
+        },
+      });
+    }
+  }
+
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
   }

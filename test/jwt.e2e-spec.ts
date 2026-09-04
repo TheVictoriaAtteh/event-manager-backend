@@ -1,5 +1,12 @@
+/**
+ * JWT authentication e2e tests — Supabase-token architecture.
+ *
+ * JwtStrategy.validate() does a real DB lookup; UsersService is mocked so
+ * there is no database dependency in these tests.
+ */
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'e2e-test-secret';
+const TEST_JWT_SECRET = 'supabase-e2e-test-secret';
+process.env.SUPABASE_JWT_SECRET = TEST_JWT_SECRET;
 
 import { Controller, Get, type INestApplication, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -10,26 +17,47 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
 import { JwtStrategy } from '../src/auth/strategies/jwt.strategy';
+import { UsersService } from '../src/users/users.service';
+
+const MOCK_LOCAL_USER = {
+  id: 'local-db-user-1',
+  supabaseUserId: 'supa-user-1',
+  email: 'jane@example.com',
+  name: 'Jane Doe',
+  role: 'ATTENDEE',
+  avatarUrl: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const mockUsersService = {
+  findBySupabaseUserId: jest
+    .fn()
+    .mockImplementation((supabaseUserId: string) =>
+      supabaseUserId === MOCK_LOCAL_USER.supabaseUserId
+        ? Promise.resolve(MOCK_LOCAL_USER)
+        : Promise.resolve(null),
+    ),
+};
 
 @Controller('protected')
 class ProtectedController {
   @Get()
-  hello() {
-    return { ok: true };
-  }
+  hello() { return { ok: true }; }
 }
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: 'e2e-test-secret',
-      signOptions: { expiresIn: '1h' },
-    }),
+    JwtModule.register({ secret: TEST_JWT_SECRET, signOptions: { expiresIn: '1h' } }),
   ],
   controllers: [ProtectedController],
-  providers: [JwtStrategy, { provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [
+    JwtStrategy,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: UsersService, useValue: mockUsersService },
+  ],
 })
 class JwtTestModule {}
 
@@ -38,18 +66,13 @@ describe('JWT authentication (e2e)', () => {
   let jwtService: JwtService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [JwtTestModule],
-    }).compile();
-
+    const moduleRef = await Test.createTestingModule({ imports: [JwtTestModule] }).compile();
     app = moduleRef.createNestApplication();
     jwtService = moduleRef.get(JwtService);
     await app.init();
   });
 
-  afterAll(async () => {
-    await app.close();
-  });
+  afterAll(async () => { await app.close(); });
 
   it('rejects requests with a missing token (401)', async () => {
     const res = await request(app.getHttpServer()).get('/protected');
@@ -65,26 +88,28 @@ describe('JWT authentication (e2e)', () => {
     expect(res.body.code).toBe('UNAUTHORIZED');
   });
 
-  it('rejects requests with an expired token (401 TOKEN_EXPIRED)', async () => {
-    const expired = jwtService.sign({ sub: 'user-1', role: 'ATTENDEE' }, { expiresIn: -10 });
+  it('rejects an expired Supabase token (401)', async () => {
+    const expired = jwtService.sign({ sub: MOCK_LOCAL_USER.supabaseUserId }, { expiresIn: -10 });
     const res = await request(app.getHttpServer())
       .get('/protected')
-      .set('Authorization', `Bearer ${expired}`);
+      .set('Authorization', 'Bearer ' + expired);
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('TOKEN_EXPIRED');
   });
 
-  it('accepts a valid token (200)', async () => {
-    const token = jwtService.sign({
-      sub: 'user-1',
-      supabaseUserId: 'supa-1',
-      email: 'jane@example.com',
-      role: 'ATTENDEE',
-      name: 'Jane Doe',
-    });
+  it('rejects a valid token whose sub is not in the local DB (401 USER_NOT_FOUND)', async () => {
+    const token = jwtService.sign({ sub: 'unknown-supabase-user' });
     const res = await request(app.getHttpServer())
       .get('/protected')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', 'Bearer ' + token);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('USER_NOT_FOUND');
+  });
+
+  it('accepts a valid Supabase token whose sub maps to a local user (200)', async () => {
+    const token = jwtService.sign({ sub: MOCK_LOCAL_USER.supabaseUserId });
+    const res = await request(app.getHttpServer())
+      .get('/protected')
+      .set('Authorization', 'Bearer ' + token);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
   });

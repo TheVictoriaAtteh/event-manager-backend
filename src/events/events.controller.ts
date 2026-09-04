@@ -1,13 +1,10 @@
-import { Controller,Body, Post, Get, Patch, Param, Delete} from '@nestjs/common';
-import { PartialType} from '@nestjs/mapped-types';
+import { Controller, Body, Post, Get, Patch, Param, Delete } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { AssignHallDto } from './dto/assign-hall.dto';
 import { CurrentUser, type RequestUser } from '../common/decorators/current-user.decorator';
 
-
-export class createEventDto extends PartialType(CreateEventDto){}
 
 @Controller('events')
 export class EventsController {
@@ -29,13 +26,17 @@ export class EventsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() UpdateEventDtodto: UpdateEventDto) {
-    return this.eventsService.update(id, UpdateEventDtodto);
+  update(
+    @Param('id') id: string,
+    @Body() updateEventDto: UpdateEventDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.eventsService.update(id, updateEventDto, user.id);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.eventsService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.eventsService.remove(id, user.id);
   }
 
   @Patch(':id/hall')
@@ -46,4 +47,4 @@ export class EventsController {
       assignHallDto.hallId,
     );
   }
-}
+}

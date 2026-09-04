@@ -11,17 +11,17 @@ import { Roles } from '../common/decorators/roles.decorator';
 @ApiBearerAuth()
 @Controller('halls')
 export class HallsController {
-constructor(private readonly hallsService: HallsService) {}
+  constructor(private readonly hallsService: HallsService) {}
 
-@Post()
+  @Post()
   @Roles(UserRole.ADMIN)
   create(@Body() CreatehallDto: CreateHallDto, @CurrentUser() user: RequestUser) {
     return this.hallsService.create(CreatehallDto, user.id);
   }
 
   @Get()
-  findAll() {
-    return this.hallsService.findAll();
+  findAll(@CurrentUser() user: RequestUser) {
+    return this.hallsService.findAll(user.id);
   }
 
   @Get(':id')
@@ -31,13 +31,13 @@ constructor(private readonly hallsService: HallsService) {}
 
   @Patch(':id')
   @Roles(UserRole.ADMIN)
-  update(@Param('id') id: string, @Body() UpdatehallDtodto: UpdateHallDto) {
-    return this.hallsService.update(id, UpdatehallDtodto);
+  update(@Param('id') id: string, @Body() UpdatehallDtodto: UpdateHallDto, @CurrentUser() user: RequestUser) {
+    return this.hallsService.update(id, UpdatehallDtodto, user.id);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.hallsService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.hallsService.remove(id, user.id);
   }
 }

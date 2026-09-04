@@ -1,14 +1,18 @@
-import { IsString, IsNotEmpty, IsInt} from 'class-validator';
+import { IsString, IsNotEmpty, IsInt, IsOptional } from 'class-validator';
 
 export class CreateHallDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  address!: string;
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
   
   @IsInt()
   capacity!: number;
-}
+}
