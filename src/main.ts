@@ -10,7 +10,6 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
-  
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -23,14 +22,19 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // Allow the configured frontend origin(s) — comma-separated FRONTEND_URL.
   const corsOrigins = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
-  app.enableCors({ origin: corsOrigins, credentials: true });
-  app.enableShutdownHooks();
 
+  app.enableCors({
+    origin: corsOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
+
+  app.enableShutdownHooks();
   setupSwagger(app);
 
   const port = Number(config.get('PORT') ?? 4000);
