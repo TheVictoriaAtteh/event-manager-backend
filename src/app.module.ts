@@ -9,8 +9,6 @@ import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { HallsModule } from './halls/halls.module';
 import { AttendeesModule } from './attendees/attendees.module';
-import { CheckInModule } from './check-in/check-in.module';
-import { UploadsModule } from './uploads/uploads.module';
 
 /**
  * Root module.
@@ -32,8 +30,6 @@ import { UploadsModule } from './uploads/uploads.module';
     EventsModule,
     HallsModule,
     AttendeesModule,
-    CheckInModule,
-    UploadsModule,
   ],
   providers: [
     {

@@ -16,6 +16,6 @@ import { SupabaseService } from './supabase.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, SupabaseService, JwtStrategy],
-  exports: [AuthService],
+  exports: [AuthService, SupabaseService, PassportModule, JwtModule],
 })
 export class AuthModule {}

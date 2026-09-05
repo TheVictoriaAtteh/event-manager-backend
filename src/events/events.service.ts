@@ -3,19 +3,13 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { AssignHallDto } from './dto/assign-hall.dto';
+import { SupabaseService } from '../auth/supabase.service';
+
 
 @Injectable()
-export class EventsService {constructor(private prisma: PrismaService) {}
+export class EventsService {constructor(private prisma: PrismaService,private supabaseService: SupabaseService) {}
 
- async create(dto: CreateEventDto, organizerId: string) {
-   const organization = await this.prisma.organization.findFirst({
-     where: { ownerId: organizerId },
-     select: { id: true },
-   });
-
-   if (!organization) {
-     throw new BadRequestException('User does not own an organization');
-   }
+ async create(dto: CreateEventDto, organizerId: string, file?: any) {
 
 const {
     date,
@@ -23,14 +17,9 @@ const {
     description,
     startsAt,
     endsAt,
-    capacity,
-    location,
-    logoUrl,
     brandColor,
     hallId,
   } = dto;
-
-  // Optional hall assignment is validated before creating the event.
   if (hallId) {
     const hall = await this.prisma.hall.findUnique({
       where: { id: hallId },
@@ -53,19 +42,22 @@ const {
     }
   }
 
+let logoUrl = dto.logoUrl;
+
+if (file) {
+  logoUrl = await this.supabaseService.uploadEventBanner(file);
+}
+
   return this.prisma.event.create({
     data: {
       date,
       description,
       title,
-      startsAt: new Date(startsAt),
-      endsAt: new Date(endsAt),
-      capacity,
-      location,
+      startsAt,
+      endsAt,
       logoUrl,
       brandColor,
       organizerId,
-      organizationId: organization.id,
       hallId: hallId ?? null,
     },
     include: { organizer: true, hall: true },
@@ -144,7 +136,7 @@ async assignHall(eventId: string, hallId: string) {
  throw new NotFoundException('Hall not found');
  }
 
-if (hall.organizationId !== event.organizationId) {
+if (hall.organizerId !== event.organizerId) {
     throw new BadRequestException(
       'Hall does not belong to this organization',
     );

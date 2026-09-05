@@ -8,15 +8,7 @@ import { UpdateHallDto } from './dto/update-hall.dto';
 export class HallsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateHallDto, ownerId: string) {
-    const organization = await this.prisma.organization.findFirst({
-      where: { ownerId },
-      select: { id: true },
-    });
-
-    if (!organization) {
-      throw new BadRequestException('User does not own an organization');
-    }
+  async create(dto: CreateHallDto, organizerId: string) {
 
     const {
       name,
@@ -32,8 +24,8 @@ export class HallsService {
         description,
         capacity,
         organization: {
-          connect: { id: organization.id },
-        },
+        connect: { id: organization.id },
+      },
       },
     });
   }

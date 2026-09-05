@@ -83,7 +83,7 @@ export class AttendeesService {
   /** Creates a fresh, active pass for an attendee. The pass UUID is the
    *  unguessable token encoded in the QR code (PRD §7). */
   private issuePass(attendeeId: string) {
-    return this.prisma.pass.create({ data: { attendeeId } });
+    return this.prisma.pass.create({ data: { attendeeId, qrToken: crypto.randomUUID() } });
   }
 
   async create(
@@ -221,7 +221,7 @@ export class AttendeesService {
           where: { attendeeId: id, revokedAt: null },
           data: { revokedAt: new Date() },
         });
-        await tx.pass.create({ data: { attendeeId: id } });
+        await tx.pass.create({ data: { attendeeId: id, qrToken: crypto.randomUUID() } });
       }
     });
 
@@ -277,7 +277,7 @@ export class AttendeesService {
               passType: row.passType?.trim() || DEFAULT_PASS_TYPE,
             },
           });
-          await tx.pass.create({ data: { attendeeId: attendee.id } });
+          await tx.pass.create({ data: { attendeeId: attendee.id, qrToken: crypto.randomUUID() } });
           created++;
         });
       } catch (err) {
