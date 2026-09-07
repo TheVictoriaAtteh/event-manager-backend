@@ -12,6 +12,8 @@ import { AttendeesModule } from './attendees/attendees.module';
 import { CheckInModule } from './check-in/check-in.module';
 import { UploadsModule } from './uploads/uploads.module';
 
+import { AppController } from './app.controller';
+
 /**
  * Root module.
  *
@@ -24,6 +26,7 @@ import { UploadsModule } from './uploads/uploads.module';
  * RolesGuard enforces @Roles() decorators on protected endpoints.
  */
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
