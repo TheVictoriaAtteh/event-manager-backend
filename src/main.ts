@@ -22,13 +22,23 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  const corsOrigins = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000')
+  // CORS: always allow the deployed Cloudflare Pages frontend and local
+  // development, plus any extra origins supplied via FRONTEND_URL (comma-separated).
+  const configuredCorsOrigins = (config.get<string>('FRONTEND_URL') ?? '')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
+  const corsOrigins = [
+    ...new Set([
+      'https://eventfrontend.pages.dev',
+      'http://localhost:3000',
+      ...configuredCorsOrigins,
+    ]),
+  ];
+
   app.enableCors({
-    origin: ['https://eventfrontend.pages.dev', 'http://localhost:3000'],
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

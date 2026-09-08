@@ -40,7 +40,7 @@ interface SupabaseErrorLike {
  * After a successful Supabase credential check, the Supabase-issued
  * access_token is returned directly to the frontend — this backend no longer
  * signs its own tokens. Incoming Bearer tokens are validated by JwtStrategy
- * using SUPABASE_JWT_SECRET (passport-jwt handles the HS256 verification).
+ * using the Supabase ES256 public key (passport-jwt handles ES256 verification).
  */
 @Injectable()
 export class AuthService {

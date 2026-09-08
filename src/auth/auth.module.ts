@@ -12,7 +12,8 @@ import { SupabaseService } from './supabase.service';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     // JwtModule is intentionally NOT imported here.
     // Token signing has been removed — we return Supabase-issued tokens directly.
-    // Token validation is handled by passport-jwt in JwtStrategy using SUPABASE_JWT_SECRET.
+    // Token validation is handled by passport-jwt in JwtStrategy using the
+    // Supabase ES256 public key (see strategies/jwt.strategy.ts).
   ],
   controllers: [AuthController],
   providers: [AuthService, SupabaseService, JwtStrategy],
