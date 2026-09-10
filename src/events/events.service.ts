@@ -20,6 +20,8 @@ const {
     brandColor,
     hallId,
   } = dto;
+
+
   if (hallId) {
     const hall = await this.prisma.hall.findUnique({
       where: { id: hallId },
@@ -65,7 +67,7 @@ if (file) {
 }
 
 
-findAll() {
+async findAll() {
     return this.prisma.event.findMany({
       orderBy: { date: 'asc' },
       include: { 
@@ -129,22 +131,10 @@ async assignHall(eventId: string, hallId: string) {
  if (!event) {
  throw new NotFoundException('Event not found');
  }
- const hall = await this.prisma.hall.findUnique({
- where: { id: hallId },
- });
- if (!hall) {
- throw new NotFoundException('Hall not found');
- }
-
-if (hall.organizerId !== event.organizerId) {
-    throw new BadRequestException(
-      'Hall does not belong to this organization',
-    );
-  }
 
  return this.prisma.event.update({
  where: { id: eventId },
- data: {hallId: hall.id},
+ data: {hallId},
  include: {hall: true},
  });
 }
