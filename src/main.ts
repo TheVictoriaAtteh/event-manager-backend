@@ -28,7 +28,7 @@ async function bootstrap(): Promise<void> {
     .filter(Boolean);
 
   app.enableCors({
-    origin: ['https://eventfrontend.pages.dev', 'http://localhost:3000'],
+    origin: ['https://eventfront.pages.dev', 'http://localhost:3000'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
