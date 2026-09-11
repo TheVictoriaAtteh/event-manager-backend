@@ -8,15 +8,7 @@ import { UpdateHallDto } from './dto/update-hall.dto';
 export class HallsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateHallDto, ownerId: string) {
-    const organization = await this.prisma.organization.findFirst({
-      where: { ownerId },
-      select: { id: true },
-    });
-
-    if (!organization) {
-      throw new BadRequestException('User does not own an organization');
-    }
+  async create(dto: CreateHallDto, organizerId: string) {
 
     const {
       name,
@@ -31,25 +23,14 @@ export class HallsService {
         address,
         description,
         capacity,
-        organization: {
-          connect: { id: organization.id },
-        },
+        organizerId,
       },
     });
   }
 
-  async findAll(ownerId: string) {
-    const organization = await this.prisma.organization.findFirst({
-      where: { ownerId },
-      select: { id: true },
-    });
-
-    if (!organization) {
-      return [];
-    }
-
+  async findAll(organizerId: string) {
     return this.prisma.hall.findMany({
-      where: { organizationId: organization.id },
+      where: { organizerId },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { events: true } },
@@ -72,14 +53,13 @@ export class HallsService {
   async update(id: string, updateHallDto: UpdateHallDto, ownerId: string) {
     const hall = await this.prisma.hall.findUnique({
       where: { id },
-      include: { organization: { select: { ownerId: true } } },
     });
 
     if (!hall) {
       throw new NotFoundException('Hall not found');
     }
 
-    if (hall.organization.ownerId !== ownerId) {
+    if (hall.organizerId !== ownerId) {
       throw new ForbiddenException('You are not authorized to modify this hall');
     }
 
@@ -92,14 +72,13 @@ export class HallsService {
   async remove(id: string, ownerId: string) {
     const hall = await this.prisma.hall.findUnique({
       where: { id },
-      include: { organization: { select: { ownerId: true } } },
     });
 
     if (!hall) {
       throw new NotFoundException('Hall not found');
     }
 
-    if (hall.organization.ownerId !== ownerId) {
+    if (hall.organizerId !== ownerId) {
       throw new ForbiddenException('You are not authorized to delete this hall');
     }
 

@@ -10,15 +10,12 @@ export class CreateEventDto {
   @IsDateString()
   date!: string;
 
-  @IsDateString()
+  @IsString()
   startsAt!: string;
 
-  @IsDateString()
-  endsAt!: string;
-
   @IsString()
-  location!: string;
-
+  endsAt?: string;
+  
   @IsOptional()
   @IsString()
   logoUrl?: string;
@@ -26,9 +23,6 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   brandColor?: string;
-
-  @IsInt()
-  capacity!: number;
 
   @IsOptional()
   @IsString()

@@ -127,6 +127,35 @@ export class SupabaseService implements OnModuleInit {
     return this.anonClient.auth.getUser(accessToken);
   }
 
+
+
+  
+  async uploadEventBanner(file: any): Promise<string> {
+  const fileExtension = file.originalname.split('.').pop();
+
+  const fileName = `event-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2)}.${fileExtension}`;
+
+  const { error } = await this.adminClient.storage
+    .from('Event-banners')
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Image upload failed: ${error.message}`);
+  }
+
+  const { data } = this.adminClient.storage
+    .from('Event-banners')
+    .getPublicUrl(fileName);
+
+  return data.publicUrl;
+}
+
+
   /**
    * Initiate OAuth sign-in with Google.
    * Returns the authorization URL to redirect the user to.

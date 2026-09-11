@@ -3,19 +3,13 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { AssignHallDto } from './dto/assign-hall.dto';
+import { SupabaseService } from '../auth/supabase.service';
 
 @Injectable()
-export class EventsService {constructor(private prisma: PrismaService) {}
+export class EventsService {
+  supabaseService: any;constructor(private prisma: PrismaService) {}
 
  async create(dto: CreateEventDto, organizerId: string) {
-   const organization = await this.prisma.organization.findFirst({
-     where: { ownerId: organizerId },
-     select: { id: true },
-   });
-
-   if (!organization) {
-     throw new BadRequestException('User does not own an organization');
-   }
 
 const {
     date,
@@ -23,9 +17,6 @@ const {
     description,
     startsAt,
     endsAt,
-    capacity,
-    location,
-    logoUrl,
     brandColor,
     hallId,
   } = dto;
@@ -52,20 +43,25 @@ const {
       throw new BadRequestException('This hall is already booked for this time.');
     }
   }
+    
+let logoUrl = dto.logoUrl;
+
+if (File) {
+  logoUrl = await this.supabaseService.uploadEventBanner(File);
+}
+
+
 
   return this.prisma.event.create({
     data: {
       date,
       description,
       title,
-      startsAt: new Date(startsAt),
-      endsAt: new Date(endsAt),
-      capacity,
-      location,
+      startsAt,
+      endsAt,
       logoUrl,
       brandColor,
       organizerId,
-      organizationId: organization.id,
       hallId: hallId ?? null,
     },
     include: { organizer: true, hall: true },
@@ -73,7 +69,7 @@ const {
 }
 
 
-findAll() {
+async findAll() {
     return this.prisma.event.findMany({
       orderBy: { date: 'asc' },
       include: { 
@@ -137,22 +133,10 @@ async assignHall(eventId: string, hallId: string) {
  if (!event) {
  throw new NotFoundException('Event not found');
  }
- const hall = await this.prisma.hall.findUnique({
- where: { id: hallId },
- });
- if (!hall) {
- throw new NotFoundException('Hall not found');
- }
-
-if (hall.organizationId !== event.organizationId) {
-    throw new BadRequestException(
-      'Hall does not belong to this organization',
-    );
-  }
 
  return this.prisma.event.update({
  where: { id: eventId },
- data: {hallId: hall.id},
+  data: {hallId},
  include: {hall: true},
  });
 }
