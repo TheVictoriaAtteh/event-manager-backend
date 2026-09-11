@@ -127,9 +127,6 @@ export class SupabaseService implements OnModuleInit {
     return this.anonClient.auth.getUser(accessToken);
   }
 
-
-
-  
   async uploadEventBanner(file: any): Promise<string> {
   const fileExtension = file.originalname.split('.').pop();
 
