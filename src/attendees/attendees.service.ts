@@ -11,6 +11,7 @@ import { CreateAttendeeDto } from './dto/create-attendee.dto';
 import { UpdateAttendeeDto } from './dto/update-attendee.dto';
 import { QueryAttendeesDto } from './dto/query-attendees.dto';
 import { mapAttendeeRows, parseCsv, summarizeCsvResult } from './csv.util';
+import { randomUUID } from 'crypto';
 
 /** Default pass type applied when an attendee row does not specify one. */
 const DEFAULT_PASS_TYPE = 'General';
@@ -83,7 +84,7 @@ export class AttendeesService {
   /** Creates a fresh, active pass for an attendee. The pass UUID is the
    *  unguessable token encoded in the QR code (PRD §7). */
   private issuePass(attendeeId: string) {
-    return this.prisma.pass.create({ data: { attendeeId } });
+    return this.prisma.pass.create({data:{attendeeId, qrToken: randomUUID()}});
   }
 
   async create(
@@ -221,7 +222,7 @@ export class AttendeesService {
           where: { attendeeId: id, revokedAt: null },
           data: { revokedAt: new Date() },
         });
-        await tx.pass.create({ data: { attendeeId: id } });
+        await tx.pass.create({ data: { attendeeId: id, qrToken: randomUUID() } });
       }
     });
 
@@ -277,7 +278,7 @@ export class AttendeesService {
               passType: row.passType?.trim() || DEFAULT_PASS_TYPE,
             },
           });
-          await tx.pass.create({ data: { attendeeId: attendee.id } });
+          await tx.pass.create({ data: { attendeeId: attendee.id, qrToken: randomUUID() } });
           created++;
         });
       } catch (err) {

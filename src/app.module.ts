@@ -13,6 +13,9 @@ import { CheckInModule } from './check-in/check-in.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 import { AppController } from './app.controller';
+import { PassesModule } from './passes/passes.module';
+import { PdfService } from './pdf/pdf.service';
+import { PdfModule } from './pdf/pdf.module';
 
 /**
  * Root module.
@@ -37,6 +40,8 @@ import { AppController } from './app.controller';
     AttendeesModule,
     CheckInModule,
     UploadsModule,
+    PassesModule,
+    PdfModule,
   ],
   providers: [
     {
@@ -47,6 +52,7 @@ import { AppController } from './app.controller';
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
+    PdfService,
   ],
 })
 export class AppModule {}
