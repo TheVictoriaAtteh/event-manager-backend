@@ -10,6 +10,10 @@ import { EventsModule } from './events/events.module';
 import { HallsModule } from './halls/halls.module';
 import { AttendeesModule } from './attendees/attendees.module';
 import { CheckInModule } from './check-in/check-in.module';
+import { UploadsModule } from './uploads/uploads.module';
+
+import { AppController } from './app.controller';
+import { PassesModule } from './passes/passes.module';
 
 /**
  * Root module.
@@ -23,6 +27,7 @@ import { CheckInModule } from './check-in/check-in.module';
  * RolesGuard enforces @Roles() decorators on protected endpoints.
  */
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
@@ -32,6 +37,8 @@ import { CheckInModule } from './check-in/check-in.module';
     HallsModule,
     AttendeesModule,
     CheckInModule,
+    UploadsModule,
+    PassesModule,
   ],
   providers: [
     {
