@@ -11,9 +11,10 @@ import { HallsModule } from './halls/halls.module';
 import { AttendeesModule } from './attendees/attendees.module';
 import { CheckInModule } from './check-in/check-in.module';
 import { UploadsModule } from './uploads/uploads.module';
-
 import { AppController } from './app.controller';
 import { PassesModule } from './passes/passes.module';
+import { EmailModule } from './email/email.module';
+
 
 /**
  * Root module.
@@ -39,6 +40,7 @@ import { PassesModule } from './passes/passes.module';
     CheckInModule,
     UploadsModule,
     PassesModule,
+    EmailModule,
   ],
   providers: [
     {
