@@ -4,10 +4,20 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { setupSwagger } from './swagger';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  const swaggerConfig = new DocumentBuilder()
+  .setTitle('Event Manager API')
+  .setDescription('API documentation for the Event Manager application')
+  .setVersion('1.0')
+  .addBearerAuth()
+  .build();
+
+const document = SwaggerModule.createDocument(app, swaggerConfig);
+
+SwaggerModule.setup('api/docs', app, document);
   const config = app.get(ConfigService);
 
   app.useGlobalPipes(
@@ -35,7 +45,6 @@ async function bootstrap(): Promise<void> {
   });
 
   app.enableShutdownHooks();
-  setupSwagger(app);
 
   const port = Number(config.get('PORT') ??4000);
   await app.listen(port, '0.0.0.0');

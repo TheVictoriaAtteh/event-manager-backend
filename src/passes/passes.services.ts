@@ -1,12 +1,10 @@
 
 import {
-  Injectable,
-  NotFoundException,
+  Injectable, NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
-import * as QRCode from 'qrcode';
 import { PassPdfService } from './pass-pdf.services';
 import { EmailService } from '../email/email.service';
 
@@ -50,37 +48,6 @@ export class PassesService {
 
     // Generate a unique QR token
     const qrToken = randomUUID();
-
-    // Information encoded inside the QR code
-    const qrData = {
-      qrToken,
-      attendee: {
-        id: attendee.id,
-        name: attendee.name,
-        email: attendee.email,
-        passType: attendee.passType,
-      },
-      event: {
-        id: attendee.event.id,
-        title: attendee.event.title,
-        date: attendee.event.date,
-        startsAt: attendee.event.startsAt,
-        endsAt: attendee.event.endsAt,
-        hall: {
-          id: attendee.event.hall.id,
-          name: attendee.event.hall.name,
-          address: attendee.event.hall.address,
-          capacity: attendee.event.hall.capacity,
-        },
-      },
-    };
-
-    // Generate QR code
-    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData), {
-      errorCorrectionLevel: 'H',
-      margin: 2,
-      width: 1000,
-    });
 
     // Create the pass in the database
     const pass = await this.prisma.pass.create({
@@ -135,8 +102,6 @@ export class PassesService {
     return {
       passId: pass.id,
       qrToken: pass.qrToken,
-      qrCode,
-      qrData,
     };
   }
 }

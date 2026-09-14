@@ -1,28 +1,45 @@
-import { type INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
-export function setupSwagger(app: INestApplication): void {
-  const document = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle('Event Manager API')
-      .setDescription(
-        'REST API for the Event Manager application. Authentication is backed ' +
-          'by Supabase Auth (credentials & email verification); protected ' +
-          'endpoints require a Bearer JWT issued by POST /auth/login.',
-      )
-      .setVersion('1.0')
-      .addBearerAuth(
-        {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          in: 'header',
-        },
-        'JWT',
-      )
-      .build(),
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: false },
+    }),
   );
-  SwaggerModule.setup('api/docs', app, document);
+
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new LoggingInterceptor());
+
+  const corsOrigins = (config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  app.enableCors({
+    origin: ['https://eventfront.pages.dev', 'http://localhost:3000'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
+
+  app.enableShutdownHooks();
+  
+
+  const port = Number(config.get('PORT') ??4000);
+  await app.listen(port, '0.0.0.0');
+  Logger.log(`Event Manager API listening on port ${port}`, 'Bootstrap');
+  Logger.log(`Swagger documentation available at /api/docs`, 'Bootstrap');
 }
+
+void bootstrap();

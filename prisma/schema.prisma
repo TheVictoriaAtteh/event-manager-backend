@@ -61,10 +61,8 @@ model Event {
   id                        String     @id @default(uuid())
   description               String
   date                      String
-  location                  String
   logoUrl                   String?
   brandColor                String?
-  capacity                  Int
   publicRegistrationEnabled Boolean    @default(false)
   hallId                    String?
   organizerId               String
