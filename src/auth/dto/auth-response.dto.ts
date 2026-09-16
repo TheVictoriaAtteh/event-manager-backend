@@ -5,7 +5,6 @@ export class AuthUserDto {
   @ApiProperty() supabaseUserId: string;
   @ApiProperty() email: string;
   @ApiProperty() name: string;
-  @ApiProperty() role: string;
   @ApiPropertyOptional({ nullable: true }) avatarUrl?: string | null;
   @ApiProperty() createdAt: Date;
 }

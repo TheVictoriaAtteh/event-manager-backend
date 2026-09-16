@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { UserRole, type User } from '@prisma/client';
+import { type User } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import type { SyncUserDto } from './dto/sync-user.dto';
 
@@ -9,7 +9,7 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   
-  async createOrUpdate(dto: SyncUserDto, role?: UserRole): Promise<User> {
+  async createOrUpdate(dto: SyncUserDto): Promise<User> {
     return this.prisma.user.upsert({
       where: { supabaseUserId: dto.supabaseUserId },
       update: {
@@ -22,7 +22,6 @@ export class UsersService {
         email: dto.email.toLowerCase(),
         name: dto.name,
         avatarUrl: dto.avatarUrl ?? null,
-        ...(role ? { role } : {}),
       },
     });
   }

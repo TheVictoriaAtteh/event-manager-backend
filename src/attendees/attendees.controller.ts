@@ -21,9 +21,9 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+
 import { CurrentUser, type RequestUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+
 import { AttendeesService } from './attendees.service';
 import { CreateAttendeeDto } from './dto/create-attendee.dto';
 import { UpdateAttendeeDto } from './dto/update-attendee.dto';
@@ -70,7 +70,7 @@ export class AttendeesController {
   }
 
   @Post('events/:eventId/attendees/import')
-  @Roles(UserRole.ADMIN)
+
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Bulk-import attendees from a CSV file (ADMIN only)' })
   @ApiConsumes('multipart/form-data')

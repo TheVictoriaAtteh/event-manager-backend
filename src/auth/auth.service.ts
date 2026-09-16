@@ -11,7 +11,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserRole, type User } from '@prisma/client';
+import { type User } from '@prisma/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { UsersService } from '../users/users.service';
 import type { AuthUserDto } from './dto/auth-response.dto';
@@ -107,7 +107,6 @@ export class AuthService {
       const localUser = await this.syncUser(
         supabaseUser,
         dto.name,
-        UserRole.ATTENDEE,
       );
       return {
         message: 'Registration successful. You are now signed in.',
@@ -344,7 +343,7 @@ export class AuthService {
     const supabaseUser = data.session.user;
 
     // Sync user to local database (OAuth users default to ATTENDEE role)
-    const localUser = await this.syncUser(supabaseUser, UserRole.ATTENDEE);
+    const localUser = await this.syncUser(supabaseUser);
 
     return {
       accessToken: data.session.access_token,
@@ -450,7 +449,6 @@ export class AuthService {
   private async syncUser(
     supabaseUser: SupabaseUser,
     fallbackName?: string,
-    role?: UserRole,
   ): Promise<User> {
     const metadata = (supabaseUser.user_metadata ?? {}) as Record<string, unknown>;
     const email = supabaseUser.email ?? '';
@@ -470,7 +468,7 @@ export class AuthService {
 
     const user = await this.usersService.createOrUpdate(
       { supabaseUserId: supabaseUser.id, email, name, avatarUrl },
-      role,
+      
     );
 
     // Ensure the user owns at least one Organization so that event and hall
@@ -488,7 +486,6 @@ export class AuthService {
       supabaseUserId: user.supabaseUserId,
       email: user.email,
       name: user.name,
-      role: user.role,
       avatarUrl: user.avatarUrl ?? null,
       createdAt: user.createdAt,
     };

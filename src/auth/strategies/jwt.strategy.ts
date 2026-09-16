@@ -28,7 +28,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     email?: string;
     exp?: number;
-    role?: string;
   }): Promise<RequestUser> {
     const user = await this.usersService.findBySupabaseUserId(payload.sub);
     if (!user) {
@@ -41,7 +40,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: user.id,
       supabaseUserId: user.supabaseUserId,
       email: user.email,
-      role: user.role,
       name: user.name,
     };
   }

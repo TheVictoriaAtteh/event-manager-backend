@@ -7,7 +7,6 @@ export interface RequestUser {
   
   supabaseUserId: string;
   email: string;
-  role: string;
   name: string;
 }
 

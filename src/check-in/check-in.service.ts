@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 export interface CheckInResult {
@@ -87,19 +86,15 @@ export class CheckInService {
     // Verify staff/admin authorization for this event
     const scannedBy = await this.prisma.user.findUnique({
       where: { id: scannedById },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true},
     });
 
-    if (
-      !scannedBy ||
-      (scannedBy.role !== UserRole.ADMIN &&
-        pass.attendee.event.organizerId !== scannedById)
-    ) {
-      throw new ForbiddenException({
-        message: 'You are not authorized to perform check-ins for this event',
-        code: 'UNAUTHORIZED_CHECKIN',
-      });
-    }
+    if (!scannedBy || pass.attendee.event.organizerId !== scannedById) {
+  throw new ForbiddenException({
+    message: 'You are not authorized to perform check-ins for this event',
+    code: 'UNAUTHORIZED_CHECKIN',
+  });
+}
 
     if (pass.checkIn) {
       throw new ConflictException({
@@ -168,15 +163,15 @@ export class CheckInService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    });
+  where: { id: userId },
+  select: { id: true },
+});
 
-    if (!user || (user.role !== UserRole.ADMIN && event.organizerId !== userId)) {
-      throw new ForbiddenException(
-        'You do not have access to view check-ins for this event',
-      );
-    }
+if (!user || event.organizerId !== userId) {
+  throw new ForbiddenException(
+    'You do not have access to view check-ins for this event',
+  );
+}
 
     const checkIns = await this.prisma.checkIn.findMany({
       where: {

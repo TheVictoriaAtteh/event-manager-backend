@@ -9,7 +9,6 @@ export interface JwtPayload {
   /** Supabase Auth user id. */
   supabaseUserId: string;
   email: string;
-  role: string;
   name: string;
   iat?: number;
   exp?: number;

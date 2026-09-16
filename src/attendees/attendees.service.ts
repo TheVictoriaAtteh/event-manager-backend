@@ -150,7 +150,7 @@ export class AttendeesService {
     ]);
 
     return {
-      data: data.map((attendee: { id: string; eventId: string; name: string; email: string; passType: string; createdAt: Date; updatedAt: Date; passes: { id: string; revokedAt: Date | null; checkIn: { scannedAt: Date; } | null; }[]; }) => this.toWithRelations(attendee)),
+      data: data.map((attendee) => this.toWithRelations(attendee)),
       total,
     };
   }
@@ -307,6 +307,7 @@ export class AttendeesService {
     eventId: string;
     name: string;
     email: string;
+    phone: string |  null;
     passType: string;
     createdAt: Date;
     updatedAt: Date;
@@ -318,6 +319,7 @@ export class AttendeesService {
       eventId: attendee.eventId,
       name: attendee.name,
       email: attendee.email,
+      phone: attendee.phone,
       passType: attendee.passType,
       createdAt: attendee.createdAt,
       updatedAt: attendee.updatedAt,
