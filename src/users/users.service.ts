@@ -10,22 +10,36 @@ export class UsersService {
 
   
   async createOrUpdate(dto: SyncUserDto): Promise<User> {
-    return this.prisma.user.upsert({
-      where: { supabaseUserId: dto.supabaseUserId },
-      update: {
-        email: dto.email.toLowerCase(),
-        name: dto.name,
-        avatarUrl: dto.avatarUrl ?? null,
-      },
-      create: {
-        supabaseUserId: dto.supabaseUserId,
-        email: dto.email.toLowerCase(),
-        name: dto.name,
-        avatarUrl: dto.avatarUrl ?? null,
-      },
-    });
-  }
+  return this.prisma.user.upsert({
+    where: {
+      supabaseUserId: dto.supabaseUserId,
+    },
 
+    update: {
+      email: dto.email.toLowerCase(),
+      name: dto.name,
+      avatarUrl: dto.avatarUrl ?? null,
+    },
+
+    create: {
+      supabaseUserId: dto.supabaseUserId,
+      email: dto.email.toLowerCase(),
+      name: dto.name,
+      avatarUrl: dto.avatarUrl ?? null,
+    },
+
+    select: {
+      id: true,
+      supabaseUserId: true,
+      email: true,
+      name: true,
+      avatarUrl: true,
+      createdAt: true,
+      updatedAt: true,
+      role: true,
+    },
+  });
+}
   /**
    * Ensures the user owns at least one Organization.
    * Creates a default Organization on first login so that event and hall
@@ -51,10 +65,21 @@ export class UsersService {
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
   }
-
-  findBySupabaseUserId(supabaseUserId: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { supabaseUserId } });
-  }
+findBySupabaseUserId(supabaseUserId: string): Promise<User | null> {
+  return this.prisma.user.findUnique({
+    where: { supabaseUserId },
+    select: {
+      id: true,
+      supabaseUserId: true,
+      email: true,
+      name: true,
+      avatarUrl: true,
+      createdAt: true,
+      updatedAt: true,
+      role: true,
+    },
+  });
+}
 
   findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
