@@ -10,6 +10,7 @@ model User {
   id                 String         @id @default(uuid())
   supabaseUserId     String         @unique
   email              String         @unique
+  role               UserRole @default(ADMIN)
   name               String
   avatarUrl          String?
   createdAt          DateTime       @default(now())
@@ -57,24 +58,24 @@ model Hall {
 }
 
 model Event {
-  id                        String     @id @default(uuid())
-  description               String
-  date                      String
-  logoUrl                   String?
-  brandColor                String?
-  publicRegistrationToken   String    @unique @default(uuid())
-  hallId                    String?
-  organizerId               String
-  createdAt                 DateTime   @default(now())
-  updatedAt                 DateTime   @updatedAt
-  category                  String?
-  endsAt                    String?
-  startsAt                  String
-  title                     String
-  attendees                 Attendee[]
-  hall                      Hall?      @relation(fields: [hallId], references: [id])
-  organizer                 User       @relation(fields: [organizerId], references: [id])
-  tasks                     Task[]
+  id                      String     @id @default(uuid())
+  description             String
+  date                    String
+  logoUrl                 String?
+  brandColor              String?
+  hallId                  String?
+  organizerId             String
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+  category                String?
+  endsAt                  String?
+  startsAt                String
+  title                   String
+  publicRegistrationToken String     @unique @default(uuid())
+  attendees               Attendee[]
+  hall                    Hall?      @relation(fields: [hallId], references: [id])
+  organizer               User       @relation(fields: [organizerId], references: [id])
+  tasks                   Task[]
 
   @@index([organizerId])
   @@index([startsAt])
@@ -87,10 +88,10 @@ model Attendee {
   eventId   String
   name      String
   email     String
-  phone     String?
   passType  String   @default("General")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  phone     String?
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   passes    Pass[]
 
@@ -192,4 +193,9 @@ enum NotificationType {
   EVENT
   TASK
   PASS
+}
+
+
+enum UserRole {
+  ADMIN
 }

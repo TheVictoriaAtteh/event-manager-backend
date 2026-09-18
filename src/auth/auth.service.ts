@@ -488,6 +488,7 @@ export class AuthService {
       name: user.name,
       avatarUrl: user.avatarUrl ?? null,
       createdAt: user.createdAt,
+      role: user.role,
     };
   }
 

@@ -7,6 +7,8 @@ export class AuthUserDto {
   @ApiProperty() name: string;
   @ApiPropertyOptional({ nullable: true }) avatarUrl?: string | null;
   @ApiProperty() createdAt: Date;
+  @ApiProperty({ example: 'ADMIN' })
+  role: string;
 }
 
 export class RegisterResponseDto {

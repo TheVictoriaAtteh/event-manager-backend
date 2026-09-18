@@ -81,6 +81,7 @@ export class PassesService {
           <strong>${attendee.event.title}</strong>
           has been confirmed.
         </p>
+        
 
         <p>
           Your event pass is attached to this email.
