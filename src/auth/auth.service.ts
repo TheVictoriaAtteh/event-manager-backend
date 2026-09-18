@@ -206,6 +206,7 @@ export class AuthService {
 
     const localUser = await this.syncUser(supabaseUser);
 
+    console.log('LOGIN USER ROLE:', localUser.role);
     // Decode exp claim from the Supabase JWT without verifying signature.
     let expiresIn = 3600;
     try {
