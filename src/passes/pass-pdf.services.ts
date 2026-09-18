@@ -103,7 +103,7 @@ const qrDataUrl = await QRCode.toDataURL(
 
     const chunks: Buffer[] = [];
 
-    doc.on('data', (chunk) => {
+    doc.on('data', (chunk:Buffer) => {
       chunks.push(chunk);
     });
 
