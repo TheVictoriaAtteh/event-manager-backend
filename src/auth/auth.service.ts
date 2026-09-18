@@ -1,3 +1,4 @@
+
 import {
   BadGatewayException,
   BadRequestException,
@@ -38,9 +39,7 @@ interface SupabaseErrorLike {
  * sends verification emails itself.
  *
  * After a successful Supabase credential check, the Supabase-issued
- * access_token is returned directly to the frontend — this backend no longer
- * signs its own tokens. Incoming Bearer tokens are validated by JwtStrategy
- * using SUPABASE_JWT_SECRET (passport-jwt handles the HS256 verification).
+ * access_token is returned directly to the frontend.
  */
 @Injectable()
 export class AuthService {
@@ -68,7 +67,7 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------
-  // Registration (Supabase sends the confirmation email)
+  // Registration
   // ---------------------------------------------------------------------
 
   async register(dto: RegisterDto) {
@@ -84,13 +83,17 @@ export class AuthService {
     }
 
     const supabaseUser = data.user;
+
     if (!supabaseUser) {
-      throw new InternalServerErrorException('Registration failed unexpectedly');
+      throw new InternalServerErrorException(
+        'Registration failed unexpectedly',
+      );
     }
 
-    // Supabase returns an "empty" user (no identities) when the email is
-    // already registered and confirmed.
-    if (supabaseUser.identities && supabaseUser.identities.length === 0) {
+    if (
+      supabaseUser.identities &&
+      supabaseUser.identities.length === 0
+    ) {
       throw new ConflictException({
         message: 'An account with this email already exists',
         code: 'EMAIL_ALREADY_EXISTS',
@@ -99,15 +102,12 @@ export class AuthService {
 
     const verified = Boolean(supabaseUser.email_confirmed_at);
 
-    // Email confirmation disabled in the dashboard -> Supabase returned a
-    // session immediately; sync the user and issue our JWT right away.
     if (verified && data.session) {
-      // SECURITY: Public registration always creates ATTENDEE users; ignore
-      // any client-supplied role to prevent privilege escalation.
       const localUser = await this.syncUser(
         supabaseUser,
         dto.name,
       );
+
       return {
         message: 'Registration successful. You are now signed in.',
         emailVerificationRequired: false,
@@ -118,9 +118,9 @@ export class AuthService {
       };
     }
 
-    // Email verification required -> no session returned yet.
     return {
-      message: 'Registration successful. Please check your inbox and verify your email before signing in.',
+      message:
+        'Registration successful. Please check your inbox and verify your email before signing in.',
       emailVerificationRequired: true,
     };
   }
@@ -141,6 +141,7 @@ export class AuthService {
 
     const supabaseUser = data.user;
     const session = data.session;
+
     if (!supabaseUser || !session) {
       throw new UnauthorizedException({
         message: 'Invalid email or password',
@@ -148,15 +149,20 @@ export class AuthService {
       });
     }
 
-    // Security policy: unverified users may not sign in.
     if (!supabaseUser.email_confirmed_at) {
       throw new ForbiddenException({
-        message: 'Email not verified. Please verify your email before signing in.',
+        message:
+          'Email not verified. Please verify your email before signing in.',
         code: 'EMAIL_NOT_VERIFIED',
       });
     }
 
     const localUser = await this.syncUser(supabaseUser);
+
+    // TEMPORARY DEBUG LOGS
+    console.log('LOGIN USER:', localUser);
+    console.log('LOGIN USER ROLE:', localUser.role);
+
     return {
       accessToken: session.access_token,
       tokenType: 'Bearer',
@@ -166,15 +172,16 @@ export class AuthService {
     };
   }
 
-
   // ---------------------------------------------------------------------
-  // Email verification (Supabase owns the tokens; we only relay them)
+  // Email verification
   // ---------------------------------------------------------------------
 
   async verifyEmail(dto: VerifyEmailDto) {
     this.requireCredential(dto.code, dto.tokenHash, dto.token);
+
     const supabaseUser = await this.resolveVerifiedUser(dto);
     const localUser = await this.syncUser(supabaseUser);
+
     return {
       verified: true,
       message: 'Email verified successfully. You can now sign in.',
@@ -182,22 +189,25 @@ export class AuthService {
     };
   }
 
-  /**
-   * Handles the implicit-flow confirmation link whose URL hash carries an
-   * `access_token` (no relay-able `token_hash`). The browser sends that
-   * Supabase token here; we validate it, sync the local user and issue our
-   * own JWT so the user is signed in immediately.
-   */
   async verifySession(dto: VerifySessionDto) {
     let supabaseUser: SupabaseUser;
+
     try {
-      const { data, error } = await this.supabase.getUserByAccessToken(
-        dto.accessToken,
-      );
-      if (error || !data.user) throw error ?? new Error('No user returned');
+      const { data, error } =
+        await this.supabase.getUserByAccessToken(
+          dto.accessToken,
+        );
+
+      if (error || !data.user) {
+        throw error ?? new Error('No user returned');
+      }
+
       supabaseUser = data.user;
     } catch (err) {
-      this.logger.warn(`Session verification failed: ${(err as Error)?.message}`);
+      this.logger.warn(
+        `Session verification failed: ${(err as Error)?.message}`,
+      );
+
       throw new BadRequestException({
         message: 'This verification link is invalid or has expired',
         code: 'INVALID_VERIFICATION',
@@ -205,34 +215,43 @@ export class AuthService {
     }
 
     const localUser = await this.syncUser(supabaseUser);
-    console.log('LOGIN USER:', localUser);
-console.log('LOGIN USER ROLE:', localUser.role);
-    // Decode exp claim from the Supabase JWT without verifying signature.
+
     let expiresIn = 3600;
+
     try {
       const payloadB64 = dto.accessToken.split('.')[1];
+
       if (payloadB64) {
-        const decoded = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+        const decoded = JSON.parse(
+          Buffer.from(payloadB64, 'base64url').toString('utf8'),
+        );
+
         if (decoded.exp) {
-          expiresIn = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
+          expiresIn = Math.max(
+            0,
+            decoded.exp - Math.floor(Date.now() / 1000),
+          );
         }
       }
-    } catch { /* ignore malformed payload — default to 3600 */ }
+    } catch {
+      // Ignore malformed payload — default to 3600.
+    }
 
     return {
       accessToken: dto.accessToken,
       tokenType: 'Bearer',
-      expiresIn: expiresIn,
+      expiresIn,
       refreshToken: dto.refreshToken,
       user: this.toAuthUser(localUser),
     };
   }
 
   async resendVerification(dto: ResendVerificationDto) {
-    const { error } = await this.supabase.resendConfirmationEmail(
-      dto.email,
-      this.emailRedirectTo,
-    );
+    const { error } =
+      await this.supabase.resendConfirmationEmail(
+        dto.email,
+        this.emailRedirectTo,
+      );
 
     if (error && /rate limit/i.test(error.message ?? '')) {
       throw this.rateLimited(
@@ -240,7 +259,6 @@ console.log('LOGIN USER ROLE:', localUser.role);
       );
     }
 
-    // Always return the same response to avoid account enumeration.
     return {
       message:
         'If an account exists for this email and has not been verified yet, a new verification email has been sent.',
@@ -248,20 +266,22 @@ console.log('LOGIN USER ROLE:', localUser.role);
   }
 
   // ---------------------------------------------------------------------
-  // Password reset (Supabase-native recovery flow)
+  // Password reset
   // ---------------------------------------------------------------------
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const { error } = await this.supabase.resetPasswordForEmail(
-      dto.email,
-      this.resetPasswordRedirectTo,
-    );
+    const { error } =
+      await this.supabase.resetPasswordForEmail(
+        dto.email,
+        this.resetPasswordRedirectTo,
+      );
 
     if (error && /rate limit/i.test(error.message ?? '')) {
-      throw this.rateLimited('Too many requests. Please try again later.');
+      throw this.rateLimited(
+        'Too many requests. Please try again later.',
+      );
     }
 
-    // Always return the same response to avoid account enumeration.
     return {
       message:
         'If an account exists for this email, a password reset link has been sent.',
@@ -271,70 +291,76 @@ console.log('LOGIN USER ROLE:', localUser.role);
   async resetPassword(dto: ResetPasswordDto) {
     this.requireCredential(dto.code, dto.tokenHash, dto.token);
 
-    // 1. Resolve the Supabase user behind the recovery credential.
     let supabaseUser: SupabaseUser;
+
     if (dto.code) {
-      const { data, error } = await this.supabase.exchangeCodeForSession(dto.code);
+      const { data, error } =
+        await this.supabase.exchangeCodeForSession(dto.code);
+
       if (error || !data.user) {
         throw this.invalidResetLink();
       }
+
       supabaseUser = data.user;
     } else {
-      const { data, error } = await this.supabase.verifyOtp({
-        email: dto.email,
-        tokenHash: dto.tokenHash,
-        token: dto.token,
-        type: 'recovery',
-      });
+      const { data, error } =
+        await this.supabase.verifyOtp({
+          email: dto.email,
+          tokenHash: dto.tokenHash,
+          token: dto.token,
+          type: 'recovery',
+        });
+
       if (error || !data.user) {
         throw this.invalidResetLink();
       }
+
       supabaseUser = data.user;
     }
 
-    // 2. Set the new password in Supabase (the ONLY credential store).
-    const { error: updateError } = await this.supabase.updateUserPassword(
-      supabaseUser.id,
-      dto.newPassword,
-    );
+    const { error: updateError } =
+      await this.supabase.updateUserPassword(
+        supabaseUser.id,
+        dto.newPassword,
+      );
+
     if (updateError) {
       if (/password/i.test(updateError.message ?? '')) {
         throw new BadRequestException({
-          message: 'Password does not meet the security requirements',
+          message:
+            'Password does not meet the security requirements',
           code: 'WEAK_PASSWORD',
         });
       }
+
       throw this.invalidResetLink();
     }
 
     return {
-      message: 'Password updated successfully. You can now sign in with your new password.',
+      message:
+        'Password updated successfully. You can now sign in with your new password.',
     };
   }
 
   // ---------------------------------------------------------------------
-  // OAuth (Google Sign-In)
+  // OAuth
   // ---------------------------------------------------------------------
 
-  /**
-   * Initiate OAuth flow with Google.
-   * Returns the authorization URL for the frontend to redirect to.
-   */
-  async initiateOAuth(provider: 'google'): Promise<{ url: string }> {
+  async initiateOAuth(
+    provider: 'google',
+  ): Promise<{ url: string }> {
     return this.supabase.signInWithOAuth(provider);
   }
 
-  /**
-   * Handle OAuth callback after Google authentication.
-   * Exchanges the authorization code for a Supabase session,
-   * syncs the user to the local database, and issues a JWT.
-   */
   async handleOAuthCallback(code: string) {
-    // Exchange code for session
-    const { data, error } = await this.supabase.exchangeCodeForSession(code);
+    const { data, error } =
+      await this.supabase.exchangeCodeForSession(code);
 
     if (error || !data.session?.user) {
-      this.logger.error(`OAuth callback failed: ${error?.message ?? 'No session'}`);
+      this.logger.error(
+        `OAuth callback failed: ${error?.message ?? 'No session'}`,
+      );
+
       throw new UnauthorizedException({
         message: 'OAuth authentication failed',
         code: 'OAUTH_FAILED',
@@ -342,8 +368,6 @@ console.log('LOGIN USER ROLE:', localUser.role);
     }
 
     const supabaseUser = data.session.user;
-
-    // Sync user to local database (OAuth users default to ATTENDEE role)
     const localUser = await this.syncUser(supabaseUser);
 
     return {
@@ -360,7 +384,8 @@ console.log('LOGIN USER ROLE:', localUser.role);
   // ---------------------------------------------------------------------
 
   async refresh(dto: RefreshTokenDto) {
-    const { data, error } = await this.supabase.refreshSession(dto.refreshToken);
+    const { data, error } =
+      await this.supabase.refreshSession(dto.refreshToken);
 
     if (error || !data.session || !data.user) {
       throw new UnauthorizedException({
@@ -370,6 +395,7 @@ console.log('LOGIN USER ROLE:', localUser.role);
     }
 
     const localUser = await this.syncUser(data.user);
+
     return {
       accessToken: data.session.access_token,
       tokenType: 'Bearer',
@@ -385,12 +411,14 @@ console.log('LOGIN USER ROLE:', localUser.role);
 
   async me(userId: string) {
     const user = await this.usersService.findById(userId);
+
     if (!user) {
       throw new UnauthorizedException({
         message: 'User no longer exists',
         code: 'USER_NOT_FOUND',
       });
     }
+
     return this.toAuthUser(user);
   }
 
@@ -398,28 +426,39 @@ console.log('LOGIN USER ROLE:', localUser.role);
   // Internals
   // ---------------------------------------------------------------------
 
-  /**
-   * Resolves the Supabase user for a verification credential
-   * (token_hash / legacy token / PKCE code). Throws 400 on anything
-   * invalid, expired or already used.
-   */
-  private async resolveVerifiedUser(dto: VerifyEmailDto): Promise<SupabaseUser> {
+  private async resolveVerifiedUser(
+    dto: VerifyEmailDto,
+  ): Promise<SupabaseUser> {
     try {
       if (dto.code) {
-        const { data, error } = await this.supabase.exchangeCodeForSession(dto.code);
-        if (error || !data.user) throw error ?? new Error('No user returned');
+        const { data, error } =
+          await this.supabase.exchangeCodeForSession(dto.code);
+
+        if (error || !data.user) {
+          throw error ?? new Error('No user returned');
+        }
+
         return data.user;
       }
-      const { data, error } = await this.supabase.verifyOtp({
-        email: dto.email,
-        tokenHash: dto.tokenHash,
-        token: dto.token,
-        type: dto.type ?? 'signup',
-      });
-      if (error || !data.user) throw error ?? new Error('No user returned');
+
+      const { data, error } =
+        await this.supabase.verifyOtp({
+          email: dto.email,
+          tokenHash: dto.tokenHash,
+          token: dto.token,
+          type: dto.type ?? 'signup',
+        });
+
+      if (error || !data.user) {
+        throw error ?? new Error('No user returned');
+      }
+
       return data.user;
     } catch (err) {
-      this.logger.warn(`Email verification failed: ${(err as Error)?.message}`);
+      this.logger.warn(
+        `Email verification failed: ${(err as Error)?.message}`,
+      );
+
       throw new BadRequestException({
         message: 'This verification link is invalid or has expired',
         code: 'INVALID_VERIFICATION',
@@ -451,7 +490,9 @@ console.log('LOGIN USER ROLE:', localUser.role);
     supabaseUser: SupabaseUser,
     fallbackName?: string,
   ): Promise<User> {
-    const metadata = (supabaseUser.user_metadata ?? {}) as Record<string, unknown>;
+    const metadata = (supabaseUser.user_metadata ??
+      {}) as Record<string, unknown>;
+
     const email = supabaseUser.email ?? '';
 
     const name =
@@ -461,25 +502,25 @@ console.log('LOGIN USER ROLE:', localUser.role);
       'User';
 
     const avatarUrl =
-      typeof metadata.avatar_url === 'string' && metadata.avatar_url
+      typeof metadata.avatar_url === 'string' &&
+      metadata.avatar_url
         ? metadata.avatar_url
-        : typeof metadata.picture === 'string' && metadata.picture
+        : typeof metadata.picture === 'string' &&
+            metadata.picture
           ? metadata.picture
           : undefined;
 
-    const user = await this.usersService.createOrUpdate(
-      { supabaseUserId: supabaseUser.id, email, name, avatarUrl },
-      
-    );
+    const user = await this.usersService.createOrUpdate({
+      supabaseUserId: supabaseUser.id,
+      email,
+      name,
+      avatarUrl,
+    });
 
-    // Ensure the user owns at least one Organization so that event and hall
-    // creation work immediately for any newly registered or first-time user.
     await this.usersService.ensureOrganization(user);
 
     return user;
   }
-
-
 
   private toAuthUser(user: User): AuthUserDto {
     return {
@@ -500,43 +541,66 @@ console.log('LOGIN USER ROLE:', localUser.role);
     );
   }
 
-  private throwRegisterError(error: SupabaseErrorLike): never {
+  private throwRegisterError(
+    error: SupabaseErrorLike,
+  ): never {
     const message = error.message ?? '';
+
     if (/already registered|already exists/i.test(message)) {
       throw new ConflictException({
         message: 'An account with this email already exists',
         code: 'EMAIL_ALREADY_EXISTS',
       });
     }
+
     if (/rate limit/i.test(message)) {
-      throw this.rateLimited('Too many requests. Please try again later.');
+      throw this.rateLimited(
+        'Too many requests. Please try again later.',
+      );
     }
+
     if (/password/i.test(message)) {
       throw new BadRequestException({
-        message: 'Password does not meet the security requirements',
+        message:
+          'Password does not meet the security requirements',
         code: 'WEAK_PASSWORD',
       });
     }
-    this.logger.error(`Supabase sign-up failed: ${message}`);
+
+    this.logger.error(
+      `Supabase sign-up failed: ${message}`,
+    );
+
     throw new BadGatewayException({
-      message: 'Registration could not be completed. Please try again.',
+      message:
+        'Registration could not be completed. Please try again.',
       code: 'PROVIDER_ERROR',
     });
   }
 
-  private throwLoginError(error: SupabaseErrorLike): never {
+  private throwLoginError(
+    error: SupabaseErrorLike,
+  ): never {
     const message = error.message ?? '';
-    if (/email not confirmed|confirm your email/i.test(message)) {
+
+    if (
+      /email not confirmed|confirm your email/i.test(
+        message,
+      )
+    ) {
       throw new ForbiddenException({
-        message: 'Email not verified. Please verify your email before signing in.',
+        message:
+          'Email not verified. Please verify your email before signing in.',
         code: 'EMAIL_NOT_VERIFIED',
       });
     }
+
     if (/rate limit/i.test(message)) {
-      throw this.rateLimited('Too many attempts. Please try again later.');
+      throw this.rateLimited(
+        'Too many attempts. Please try again later.',
+      );
     }
-    // Everything else (wrong password, unknown email, provider outage...)
-    // collapses into one generic response so nothing is leaked.
+
     throw new UnauthorizedException({
       message: 'Invalid email or password',
       code: 'INVALID_CREDENTIALS',
