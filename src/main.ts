@@ -46,7 +46,7 @@ SwaggerModule.setup('api/docs', app, document);
 
   app.enableShutdownHooks();
 
-  const port = Number(config.get('PORT')  || 4000);
+  const port = 4000;
   await app.listen(port, '0.0.0.0');
   Logger.log(`Event Manager API listening on port ${port}`, 'Bootstrap');
   Logger.log(`Swagger documentation available at /api/docs`, 'Bootstrap');
