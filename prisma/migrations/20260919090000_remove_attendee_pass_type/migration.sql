@@ -1,0 +1,2 @@
+ALTER TABLE "attendees"
+DROP COLUMN IF EXISTS "passType";

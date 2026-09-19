@@ -13,9 +13,6 @@ import { QueryAttendeesDto } from './dto/query-attendees.dto';
 import { mapAttendeeRows, parseCsv, summarizeCsvResult } from './csv.util';
 import { randomUUID } from 'crypto';
 
-/** Default pass type applied when an attendee row does not specify one. */
-const DEFAULT_PASS_TYPE = 'General';
-
 export interface LatestPass {
   id: string;
   revokedAt: Date | null;
@@ -106,7 +103,6 @@ export class AttendeesService {
         eventId,
         name: dto.name,
         email: dto.email.toLowerCase(),
-        passType: dto.passType?.trim() || DEFAULT_PASS_TYPE,
       },
     });
 
@@ -127,9 +123,6 @@ export class AttendeesService {
     if (query.search) {
       const q = query.search.toLowerCase();
       where.OR = [{ name: { contains: q } }, { email: { contains: q } }];
-    }
-    if (query.passType) {
-      where.passType = query.passType;
     }
 
     const [data, total] = await this.prisma.$transaction([
@@ -211,9 +204,6 @@ export class AttendeesService {
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
           ...(nextEmail !== undefined && { email: nextEmail }),
-          ...(dto.passType !== undefined && {
-            passType: dto.passType.trim() || DEFAULT_PASS_TYPE,
-          }),
         },
       });
 
@@ -275,7 +265,7 @@ export class AttendeesService {
               eventId,
               name: row.name,
               email: row.email.toLowerCase(),
-              passType: row.passType?.trim() || DEFAULT_PASS_TYPE,
+    
             },
           });
           await tx.pass.create({ data: { attendeeId: attendee.id, qrToken: randomUUID() } });
@@ -302,31 +292,24 @@ export class AttendeesService {
     };
   }
 
-  private toWithRelations(attendee: {
-    id: string;
-    eventId: string;
-    name: string;
-    email: string;
-    phone: string |  null;
-    passType: string;
-    createdAt: Date;
-    updatedAt: Date;
-    passes: { id: string; revokedAt: Date | null; checkIn: { scannedAt: Date } | null }[];
-  }): AttendeeWithRelations {
-    const latestPass = attendee.passes[0] ?? null;
-    return {
-      id: attendee.id,
-      eventId: attendee.eventId,
-      name: attendee.name,
-      email: attendee.email,
-      phone: attendee.phone,
-      passType: attendee.passType,
-      createdAt: attendee.createdAt,
-      updatedAt: attendee.updatedAt,
-      pass: latestPass
-        ? { id: latestPass.id, revokedAt: latestPass.revokedAt }
-        : null,
-      checkIn: latestPass?.checkIn ?? null,
-    };
-  }
+  private toWithRelations(attendee: any): AttendeeWithRelations {
+  const latestPass = attendee.passes[0] ?? null;
+
+  return {
+    id: attendee.id,
+    eventId: attendee.eventId,
+    name: attendee.name,
+    email: attendee.email,
+    phone: attendee.phone,
+    createdAt: attendee.createdAt,
+    updatedAt: attendee.updatedAt,
+    pass: latestPass
+      ? {
+          id: latestPass.id,
+          revokedAt: latestPass.revokedAt,
+        }
+      : null,
+    checkIn: latestPass?.checkIn ?? null,
+  };
+}
 }

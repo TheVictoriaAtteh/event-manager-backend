@@ -9,12 +9,6 @@ export class QueryAttendeesDto {
   @MaxLength(200)
   search?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by pass type, e.g. VIP' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  passType?: string;
-
   @ApiPropertyOptional({ description: 'Page size', default: 50 })
   @IsOptional()
   @Type(() => Number)

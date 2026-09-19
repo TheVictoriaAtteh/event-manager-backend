@@ -13,9 +13,4 @@ export class CreateAttendeeDto {
   @MaxLength(254)
   email: string;
 
-  @ApiPropertyOptional({ example: 'VIP', default: 'General' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  passType?: string;
 }
