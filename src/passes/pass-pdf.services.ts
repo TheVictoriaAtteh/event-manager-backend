@@ -52,31 +52,12 @@ export class PassPdfService {
     // that belongs inside the QR code.
   const qrData = {
     qrToken: pass.qrToken,
-
-  attendee: {
-      id: attendee.id,
-      name: attendee.name,
-      email: attendee.email,
-      passType: attendee.passType,
-},
-
-  event: {
-    id: event.id,
-    title: event.title,
-    date: event.date,
-    startsAt: event.startsAt,
-    endsAt: event.endsAt,
-
-  hall: {
-    id: hall.id,
-    name: hall.name,
-    address: hall.address,
-    capacity: hall.capacity,
-    },
-  },
+    eventTitle: event.title,
+    data: event.date,
 };
 
 // Generate the QR
+
 const qrDataUrl = await QRCode.toDataURL(
   JSON.stringify(qrData),
   {
