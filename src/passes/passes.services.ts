@@ -7,17 +7,19 @@ import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
 import { PassPdfService } from './pass-pdf.services';
 import { EmailService } from '../email/email.service';
-
+import { CheckInService } from '../check-in/check-in.service';
 @Injectable()
 export class PassesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly passPdfService: PassPdfService,
+    private readonly checkInService: CheckInService,
+
   ) {}
 
-  verifyPass(qrToken: string) {
-    throw new Error('Method not implemented.');
+  async verifyPass(qrToken: string) {
+    return this.checkInService.checkIn(qrToken);
   }
 
   async createPass(attendeeId: string) {
