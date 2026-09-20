@@ -10,32 +10,40 @@ export class EmailService {
   }
 
   async sendEmail(
-    to: string,
-    subject: string,
-    html: string,
-    attachments?: {
-      filename: string;
-      content: Buffer;
-    }[],
-  ) {
-    try {
-      const { data, error } = await this.resend.emails.send({
-        from: 'onboarding@resend.dev',
-        to,
-        subject,
-        html,
-        attachments,
-      });
+  to: string,
+  subject: string,
+  html: string,
+  attachments?: {
+    filename: string;
+    content: Buffer;
+  }[],
+) {
+  try {
+    const { data, error } = await this.resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to,
+      subject,
+      html,
+      attachments,
+    });
 
-      if (error) {
-        console.error('Resend error:', error);
-        throw new InternalServerErrorException('Failed to send email');
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Email error:', error);
-      throw new InternalServerErrorException('Failed to send email');
+    if (error) {
+      console.error('🔥 RESEND ERROR:', error);
+      throw new InternalServerErrorException(error.message);
     }
+
+    console.log('✅ EMAIL SENT:', data);
+
+    return data;
+  } catch (error: any) {
+    console.error('🔥 EMAIL ERROR:', error);
+
+    if (error instanceof InternalServerErrorException) {
+      throw error;
+    }
+
+    throw new InternalServerErrorException(
+      error?.message || 'Failed to send email',
+    );
   }
-}
+}}

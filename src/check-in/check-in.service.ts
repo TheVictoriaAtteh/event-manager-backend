@@ -74,7 +74,7 @@ export class CheckInService {
         id: pass.attendee.id,
         name: pass.attendee.name,
         email: pass.attendee.email,
-        passType: pass.attendee.passType,
+        
       },
 
       event: {
