@@ -4,7 +4,8 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { AssignHallDto } from './dto/assign-hall.dto';
 import { CurrentUser, type RequestUser } from '../common/decorators/current-user.decorator';
-
+import { Public } from '../common/decorators/public.decorator';
+import { CreateAttendeeDto } from '../attendees/dto/create-attendee.dto';
 
 @Controller('events')
 export class EventsController {
@@ -19,6 +20,23 @@ export class EventsController {
   findAll() {
     return this.eventsService.findAll();
   }
+
+
+@Get('register/:token')
+@Public()
+getPublicEvent(@Param('token') token: string) {
+  return this.eventsService.getPublicEvent(token);
+}
+
+
+@Post('register/:token')
+@Public()
+registerAttendee(
+  @Param('token') token: string,
+  @Body() dto: CreateAttendeeDto,
+) {
+  return this.eventsService.createAttendee(token, dto);
+}
 
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -47,4 +65,4 @@ export class EventsController {
       assignHallDto.hallId,
     );
   }
-}
+}

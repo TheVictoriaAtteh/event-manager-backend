@@ -2,11 +2,53 @@ import {
   IsString,
   IsDateString,
   IsOptional,
+  IsUUID,
+  IsInt,
+  IsNotEmpty,
+  Min,
+  ValidateNested,
 } from 'class-validator';
+
+import { Type } from 'class-transformer';
+
 import {
   ApiProperty,
   ApiPropertyOptional,
 } from '@nestjs/swagger';
+
+export class CreateHallInlineDto {
+  @ApiProperty({
+    example: 'International Conference Centre',
+    description: 'Name of the new hall',
+  })
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty({
+    example: 'Central Area, Abuja',
+    description: 'Address of the new hall',
+  })
+  @IsString()
+  @IsNotEmpty()
+  address!: string;
+
+  @ApiProperty({
+    example: 1000,
+    description: 'Maximum capacity of the hall',
+  })
+  @IsInt()
+  @Min(1)
+  capacity!: number;
+
+  @ApiPropertyOptional({
+    example: 'Main conference venue',
+    description: 'Optional description of the hall',
+  })
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
 
 export class CreateEventDto {
   @ApiProperty({
@@ -14,6 +56,7 @@ export class CreateEventDto {
     description: 'The title of the event',
   })
   @IsString()
+  @IsNotEmpty()
   title!: string;
 
   @ApiProperty({
@@ -21,10 +64,11 @@ export class CreateEventDto {
     description: 'Description of the event',
   })
   @IsString()
+  @IsNotEmpty()
   description!: string;
 
   @ApiProperty({
-    example: '2026-10-15',
+    example: '2026-10-25',
     description: 'Date of the event',
   })
   @IsDateString()
@@ -35,6 +79,7 @@ export class CreateEventDto {
     description: 'Event start time',
   })
   @IsString()
+  @IsNotEmpty()
   startsAt!: string;
 
   @ApiPropertyOptional({
@@ -47,7 +92,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     example: 'https://example.com/event-banner.jpg',
-    description: 'URL of the event banner/logo',
+    description: 'URL of event banner/logo',
   })
   @IsOptional()
   @IsString()
@@ -55,7 +100,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     example: '#1E40AF',
-    description: 'Brand color for the event',
+    description: 'Brand color for event',
   })
   @IsOptional()
   @IsString()
@@ -63,9 +108,18 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     example: 'a1b2c3d4-5678-90ab-cdef-1234567890ab',
-    description: 'ID of the hall assigned to the event',
+    description: 'ID of an existing hall',
   })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   hallId?: string;
+
+  @ApiPropertyOptional({
+    type: CreateHallInlineDto,
+    description: 'Create a new hall while creating the event',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateHallInlineDto)
+  hall?: CreateHallInlineDto;
 }
