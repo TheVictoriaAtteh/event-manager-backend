@@ -223,10 +223,7 @@ _count: {select: {attendees: true}},
 
   //assign existing hall
 
-  async assignHall(
-    eventId: string,
-    hallId: string,
-  ) {
+  async assignHall(eventId: string,hallId: string) {
     const event = await this.prisma.event.findUnique({
       where: {
         id: eventId,
