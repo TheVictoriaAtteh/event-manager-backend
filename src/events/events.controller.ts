@@ -17,8 +17,8 @@ export class EventsController {
   }
 
   @Get()
-  findAll() {
-    return this.eventsService.findAll();
+  findAll( @CurrentUser() user: RequestUser) {
+    return this.eventsService.findAll(user.id);
   }
 
 
@@ -39,7 +39,7 @@ registerAttendee(
 }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string,  @CurrentUser() user: RequestUser) {
     return this.eventsService.findOne(id);
   }
 

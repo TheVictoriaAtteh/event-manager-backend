@@ -121,8 +121,12 @@ if (file) {
 
   //get all the events
 
-  async findAll() {
-    return this.prisma.event.findMany({orderBy: {date: 'asc'},
+  async findAll(organizerId: string) {
+    return this.prisma.event.findMany({
+      where: {
+        organizerId,
+      },
+      orderBy: {date: 'asc'},
 include: {organizer: {select: {
             id: true,
             name: true,
@@ -136,10 +140,11 @@ _count: {select: {attendees: true}},
 
  //get one event
 
-  async findOne(id: string) {
-    const event = await this.prisma.event.findUnique({
+  async findOne(id: string,  organizerId?: string) {
+    const event = await this.prisma.event.findFirst({
       where: {
         id,
+         ...(organizerId && { organizerId }),
       },
 
       include: {
@@ -205,7 +210,7 @@ _count: {select: {attendees: true}},
 
   // delete events
 
-  async remove(id: string,organizerId: string) {
+  async remove(id: string,organizerId: string,) {
     const event = await this.findOne(id);
 
     if (event.organizerId !== organizerId) {
@@ -223,10 +228,10 @@ _count: {select: {attendees: true}},
 
   //assign existing hall
 
-  async assignHall(eventId: string,hallId: string) {
+  async assignHall(eventId: string,hallId: string, organizerId: string) {
     const event = await this.prisma.event.findUnique({
       where: {
-        id: eventId,
+        id: eventId, organizerId,
       },
     });
 
@@ -236,12 +241,12 @@ _count: {select: {attendees: true}},
 
     const hall = await this.prisma.hall.findUnique({
       where: {
-        id: hallId,
+        id: hallId,organizerId,
       },
     });
 
     if (!hall) {
-      throw new NotFoundException('Hall not found');
+      throw new NotFoundException('Hall not found or do not permission to use this hall');
     }
 
     // Check for scheduling conflict
