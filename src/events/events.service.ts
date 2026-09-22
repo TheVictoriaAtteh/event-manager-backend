@@ -229,7 +229,7 @@ _count: {select: {attendees: true}},
   //assign existing hall
 
   async assignHall(eventId: string,hallId: string, organizerId: string) {
-    const event = await this.prisma.event.findUnique({
+    const event = await this.prisma.event.findFirst({
       where: {
         id: eventId, organizerId,
       },
@@ -239,7 +239,7 @@ _count: {select: {attendees: true}},
       throw new NotFoundException('Event not found');
     }
 
-    const hall = await this.prisma.hall.findUnique({
+    const hall = await this.prisma.hall.findFirst({
       where: {
         id: hallId,organizerId,
       },
@@ -350,6 +350,7 @@ async createAttendee(
     });
 
   if (existingAttendee) {
+
     throw new BadRequestException(
       'This email is already registered for this event',
     );

@@ -40,7 +40,7 @@ registerAttendee(
 
   @Get(':id')
   findOne(@Param('id') id: string,  @CurrentUser() user: RequestUser) {
-    return this.eventsService.findOne(id);
+    return this.eventsService.findOne(id,user.id);
   }
 
   @Patch(':id')
@@ -58,11 +58,11 @@ registerAttendee(
   }
 
   @Patch(':id/hall')
-  assignHall(@Param('id') id: string, @Body() assignHallDto: AssignHallDto,
+  assignHall(@Param('id') id: string, @Body() assignHallDto: AssignHallDto,  @CurrentUser() user: RequestUser,
   ) {
     return this.eventsService.assignHall(
       id,
-      assignHallDto.hallId,
+      assignHallDto.hallId,user.id,
     );
   }
 }
