@@ -122,7 +122,8 @@ if (file) {
   //get all the events
 
   async findAll(organizerId: string) {
-    return this.prisma.event.findMany({
+      console.log('🔥 CURRENT ADMIN ID:', organizerId);
+      const events = await this.prisma.event.findMany({
       where: {
         organizerId,
       },
@@ -136,6 +137,8 @@ hall: true,
 _count: {select: {attendees: true}},
       },
     });
+     console.log('🔥🔥🔥 NUMBER OF EVENTS:', events.length);
+    return events;
   }
 
  //get one event
