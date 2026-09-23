@@ -12,6 +12,8 @@ import { UpdateAttendeeDto } from './dto/update-attendee.dto';
 import { QueryAttendeesDto } from './dto/query-attendees.dto';
 import { mapAttendeeRows, parseCsv, summarizeCsvResult } from './csv.util';
 import { randomUUID } from 'crypto';
+import { EmailService } from '../email/email.service';
+import { PassPdfService } from '../passes/pass-pdf.services';;
 
 export interface LatestPass {
   id: string;
@@ -40,7 +42,8 @@ interface AttendeeAccessProbe {
 
 @Injectable()
 export class AttendeesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService,   private readonly emailService: EmailService,
+  private readonly passPdfService: PassPdfService) {}
 
   /** Verifies the requester owns the event that an attendee belongs to. */
   private async assertEventOwner(eventId: string, userId: string): Promise<void> {
@@ -106,9 +109,29 @@ export class AttendeesService {
       },
     });
 
-    // Issue their pass immediately (same flow as the CSV import).
-    await this.issuePass(attendee.id);
+    // Create a new pass.
+  const pass = await this.issuePass(attendee.id);
 
+  // Generate the QR-code PDF.
+  const pdfBuffer =
+    await this.passPdfService.generatePassPdf(pass.id);
+
+  // Email the PDF to the attendee.
+  await this.emailService.sendEmail(
+    attendee.email,
+    `Your Event Pass - ${attendee.name}`,
+    `
+      <p>Hello ${attendee.name},</p>
+      <p>Your event pass is attached to this email.</p>
+      <p>Please keep it safe and present the QR code when checking in.</p>
+    `,
+    [
+      {
+        filename: 'event-pass.pdf',
+        content: pdfBuffer,
+      },
+    ],
+  );
     return this.findOne(attendee.id, userId);
   }
 
