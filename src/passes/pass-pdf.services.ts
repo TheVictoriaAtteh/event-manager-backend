@@ -1,8 +1,6 @@
 import { Injectable,NotFoundException} from '@nestjs/common';
-
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../database/prisma.service';
-
 import * as QRCode from 'qrcode';
 
 @Injectable()
@@ -22,14 +20,16 @@ export class PassPdfService {
 
       include: {
         attendee: {
-        include: {
+      include: {
         event: {
-        include: {
-        hall: true,
-        },         
+          include: {
+            hall: true,
+          },
+        },
       },
-     }, },
-},
+        },
+        ticketType: true,
+      },
     });
 
   if (!pass) {
@@ -40,13 +40,6 @@ export class PassPdfService {
 
     const attendee = pass.attendee;
     const event = attendee.event;
-    const hall = event.hall;
-
-    if (!hall) {
-      throw new NotFoundException(
-        'No hall assigned to this event',
-      );
-    }
 
     // Recreate the EXACT information
     // that belongs inside the QR code.
@@ -96,7 +89,7 @@ const qrDataUrl = await QRCode.toDataURL(
       doc.on('error', reject);
 
       // Center the QR code on the page
-      const qrSize = 450;
+      const qrSize = 300;
 
       const x =
         (doc.page.width - qrSize) / 2;
@@ -104,10 +97,29 @@ const qrDataUrl = await QRCode.toDataURL(
       const y =
         (doc.page.height - qrSize) / 2;
 
+      doc
+        .fontSize(20)
+        .text(event.title, 40, 100, {
+          align: 'center',
+          width: doc.page.width - 80,
+        });
+      doc
+        .fontSize(12)
+        .text(attendee.name, 40, 130, {
+          align: 'center',
+          width: doc.page.width - 80,
+        });
+
       doc.image(qrImage, x, y, {
         width: qrSize,
         height: qrSize,
       });
+      doc
+        .fontSize(14)
+        .text(pass.ticketType?.name ?? 'Event Pass', 40, y + qrSize + 24, {
+          align: 'center',
+          width: doc.page.width - 80,
+        });
 
       doc.end();
     });

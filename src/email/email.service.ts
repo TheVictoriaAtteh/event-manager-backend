@@ -2,12 +2,8 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { Resend } from 'resend';
 
 @Injectable()
-export class EmailService {
-  private readonly resend: Resend;
-
-  constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
-  }
+export class EmailService {private readonly resend: Resend;
+  constructor() {this.resend = new Resend(process.env.RESEND_API_KEY)}
 
   async sendEmail(
   to: string,
@@ -20,7 +16,7 @@ export class EmailService {
 ) {
   try {
     const { data, error } = await this.resend.emails.send({
-      from: 'onboarding@resend.dev',
+      from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
       to,
       subject,
       html,

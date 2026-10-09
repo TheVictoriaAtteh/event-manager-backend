@@ -1,7 +1,6 @@
 
 import {
   Injectable, NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
@@ -41,13 +40,6 @@ export class PassesService {
       throw new NotFoundException('Attendee not found');
     }
 
-    // A hall must be assigned before generating a pass
-    if (!attendee.event.hall) {
-      throw new BadRequestException(
-        'A hall must be assigned to this event before generating a pass',
-      );
-    }
-
     // Generate a unique QR token
     const qrToken = randomUUID();
 
@@ -76,11 +68,11 @@ export class PassesService {
       `
         <h2>Your event pass is ready</h2>
 
-        <p>Hello ${attendee.name},</p>
+        <p>Hello ${this.escapeHtml(attendee.name)},</p>
 
         <p>
           Your registration for
-          <strong>${attendee.event.title}</strong>
+          <strong>${this.escapeHtml(attendee.event.title)}</strong>
           has been confirmed.
         </p>
         
@@ -106,5 +98,81 @@ export class PassesService {
       passId: pass.id,
       qrToken: pass.qrToken,
     };
+  }
+
+  async emailPaidOrderPass(paymentOrderId: string): Promise<void> {
+    const order = await this.prisma.paymentOrder.findUnique({
+      where: { id: paymentOrderId },
+      include: {
+        ticketType: true,
+        pass: {
+          include: {
+            attendee: { include: { event: true } },
+          },
+        },
+      },
+    });
+
+    if (!order || order.status !== 'PAID' || !order.pass) {
+      throw new NotFoundException('Paid ticket pass not found');
+    }
+    if (order.emailSentAt) {
+      return;
+    }
+
+    const claimedAt = new Date();
+    const claim = await this.prisma.paymentOrder.updateMany({
+      where: {
+        id: order.id,
+        status: 'PAID',
+        emailSentAt: null,
+        OR: [
+          { emailClaimedAt: null },
+          { emailClaimedAt: { lt: new Date(claimedAt.getTime() - 5 * 60_000) } },
+        ],
+      },
+      data: { emailClaimedAt: claimedAt },
+    });
+    if (claim.count === 0) {
+      return;
+    }
+
+    try {
+      const pdfBuffer = await this.passPdfService.generatePassPdf(order.pass.id);
+      await this.emailService.sendEmail(
+        order.pass.attendee.email,
+        `Your ${order.pass.attendee.event.title} ticket`,
+        `
+          <h2>Your ticket is confirmed</h2>
+          <p>Hello ${this.escapeHtml(order.pass.attendee.name)},</p>
+          <p>Your payment is confirmed for <strong>${this.escapeHtml(order.pass.attendee.event.title)}</strong>.</p>
+          <p>Your ${this.escapeHtml(order.ticketType.name)} ticket is attached. Present its QR code at check-in.</p>
+        `,
+        [{ filename: `event-ticket-${order.pass.id}.pdf`, content: pdfBuffer }],
+      );
+      await this.prisma.paymentOrder.update({
+        where: { id: order.id },
+        data: { emailSentAt: new Date(), emailClaimedAt: null },
+      });
+    } catch (error) {
+      await this.prisma.paymentOrder.update({
+        where: { id: order.id },
+        data: { emailClaimedAt: null },
+      });
+      throw error;
+    }
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (character) => {
+      const entities: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      };
+      return entities[character] ?? character;
+    });
   }
 }

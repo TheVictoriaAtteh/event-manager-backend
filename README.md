@@ -55,7 +55,7 @@ npm run start:dev           # http://localhost:4000, Swagger at /api/docs
 | `SUPABASE_URL`              | Supabase project URL                                               |
 | `SUPABASE_ANON_KEY`         | Supabase anon/public key                                           |
 | `SUPABASE_SERVICE_ROLE_KEY` | 🔒 **Server-side secret — backend only, never the frontend, never committed** |
-| `FRONTEND_URL`              | Redirect target for verification/reset emails (e.g. `http://localhost:5173`) |
+| `FRONTEND_URL`              | Frontend origin(s) for auth redirects and CORS (e.g. `http://localhost:5173`) |
 
 ## Auth endpoints
 
@@ -85,6 +85,7 @@ These cannot be configured from code:
 2. **Authentication → URL Configuration**
    - Site URL: your `FRONTEND_URL` (e.g. `http://localhost:5173`)
    - Redirect URLs allowlist — add:
+     - `<FRONTEND_URL>/auth/callback` (Google OAuth callback)
      - `<FRONTEND_URL>/auth/verify` (email confirmation link)
      - `<FRONTEND_URL>/auth/reset-password` (password reset link)
 3. **Authentication → Email Templates** — optional branding; keep the
@@ -119,9 +120,9 @@ These cannot be configured from code:
 ## Database schema
 
 `prisma/schema.prisma` is the source of truth. Models: `User`,
-`Organization`, `Hall`, `Event`, `Attendee`, `Pass`, `CheckIn`, `Task`,
-`Notification`, `File`. Enums: `UserRole`, `TaskStatus`, `TaskPriority`,
-`NotificationType`. Event lifecycle status (Upcoming/Ongoing/Ended) is
+`Organization`, `Hall`, `Event`, `TicketType`, `PaymentOrder`, `Attendee`,
+`Pass`, `CheckIn`, `Task`, `Notification`, `File`. Enums: `UserRole`,
+`PaymentStatus`, `TaskStatus`, `TaskPriority`, `NotificationType`. Event lifecycle status (Upcoming/Ongoing/Ended) is
 computed from `startsAt`/`endsAt` and intentionally not stored.
 
 ## Security notes
@@ -132,3 +133,44 @@ computed from `startsAt`/`endsAt` and intentionally not stored.
 - Double check-ins are impossible at the DB level (`CheckIn.passId` unique).
 - Hall double-booking checks use the `@@index([hallId, startsAt, endsAt])`
   index and are enforced by the backend, never the frontend alone.
+
+## Public ticket sales
+
+Ticket type administration is authenticated and scoped to the event owner:
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/events/:eventId/ticket-types` | List ticket tiers and inventory |
+| POST | `/events/:eventId/ticket-types` | Add a ticket tier |
+| PATCH | `/events/:eventId/ticket-types/:ticketTypeId` | Update price, stock, sale window, or active status |
+| DELETE | `/events/:eventId/ticket-types/:ticketTypeId` | Deactivate a tier without deleting sales history |
+| GET | `/events/register/:publicToken` | Public event and currently on-sale tiers |
+| POST | `/events/register/:publicToken` | Create a Paystack checkout |
+| GET | `/payments/:reference` | Verify and retrieve checkout status |
+| POST | `/payments/webhook` | Paystack-signed payment notifications |
+
+`priceMinor` is the smallest currency unit (for example, kobo for NGN); the
+server always uses the tier's stored price. A null or omitted ticket quantity
+means unlimited stock. Limited tiers reserve inventory during checkout and
+release it after a failed or expired payment. Checkouts expire after 30 minutes.
+After payment is verified with Paystack, the API creates the attendee and QR
+pass and emails the PDF. A browser redirect is not proof of payment; the
+frontend should show success only after `GET /payments/:reference` reports
+`PAID`. The order status endpoint can also be polled to retry delivery if email
+temporarily fails.
+
+Apply the ticket/payment schema migration with the normal Prisma migration
+process. Configure these backend-only variables before enabling sales:
+
+- `PAYSTACK_SECRET_KEY`: Paystack test or live secret key.
+- `PAYSTACK_CALLBACK_URL`: optional frontend return URL; defaults to
+  `${FRONTEND_URL}/payment/callback`.
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL`: Resend API key and a verified sender.
+
+Register `https://<api-domain>/payments/webhook` in the Paystack dashboard.
+Webhook signatures are checked against the exact raw request body, then every
+successful notification is independently verified using Paystack's API.
+Never expose either Paystack or Resend secrets to the frontend. The frontend
+must render the public event/ticket list, collect attendee name/email/tier,
+redirect to the returned Paystack `authorizationUrl`, and query the reference
+on return. Frontend UI is outside this backend repository.

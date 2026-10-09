@@ -5,11 +5,17 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { AssignHallDto } from './dto/assign-hall.dto';
 import { CurrentUser, type RequestUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { CreateAttendeeDto } from '../attendees/dto/create-attendee.dto';
+import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
+import { UpdateTicketTypeDto } from './dto/update-ticket-type.dto';
+import { PaymentsService } from '../payments/payments.service';
+import { CreateTicketOrderDto } from '../payments/dto/create-ticket-order.dto';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   @Post()
   create(@Body() createEventDto: CreateEventDto, @CurrentUser() user: RequestUser) {
@@ -31,11 +37,56 @@ getPublicEvent(@Param('token') token: string) {
 
 @Post('register/:token')
 @Public()
-registerAttendee(
+createTicketOrder(
   @Param('token') token: string,
-  @Body() dto: CreateAttendeeDto,
+  @Body() dto: CreateTicketOrderDto,
 ) {
-  return this.eventsService.createAttendee(token, dto);
+  return this.paymentsService.createCheckout(token, dto);
+}
+
+  @Get(':id/ticket-types')
+  listTicketTypes(
+    @Param('id') eventId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.eventsService.listTicketTypes(eventId, user.id);
+  }
+
+  @Post(':id/ticket-types')
+  createTicketType(
+    @Param('id') eventId: string,
+    @Body() dto: CreateTicketTypeDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.eventsService.createTicketType(eventId, dto, user.id);
+  }
+
+  @Patch(':id/ticket-types/:ticketTypeId')
+  updateTicketType(
+    @Param('id') eventId: string,
+    @Param('ticketTypeId') ticketTypeId: string,
+    @Body() dto: UpdateTicketTypeDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.eventsService.updateTicketType(
+      eventId,
+      ticketTypeId,
+      dto,
+      user.id,
+    );
+  }
+
+  @Delete(':id/ticket-types/:ticketTypeId')
+  deactivateTicketType(
+    @Param('id') eventId: string,
+    @Param('ticketTypeId') ticketTypeId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.eventsService.deactivateTicketType(
+      eventId,
+      ticketTypeId,
+      user.id,
+    );
 }
 
   @Get(':id')

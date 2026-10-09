@@ -3,10 +3,10 @@ import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { PrismaModule } from '../database/prisma.module';
 import { AuthModule } from '../auth/auth.module';
-import { PassesModule } from '../passes/passes.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, PassesModule],
+  imports: [PrismaModule, AuthModule, PaymentsModule],
   controllers: [EventsController],
   providers: [EventsService]
 })

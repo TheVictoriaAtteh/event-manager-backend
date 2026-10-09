@@ -18,6 +18,7 @@ import { PassPdfService } from '../passes/pass-pdf.services';;
 export interface LatestPass {
   id: string;
   revokedAt: Date | null;
+  ticketType: { id: string; name: string } | null;
 }
 
 export interface AttendeeWithRelations extends Attendee {
@@ -158,7 +159,7 @@ export class AttendeesService {
           passes: {
             orderBy: { createdAt: 'desc' },
             take: 1,
-            include: { checkIn: true },
+            include: { checkIn: true, ticketType: true },
           },
         },
       }),
@@ -180,7 +181,7 @@ export class AttendeesService {
         passes: {
           orderBy: { createdAt: 'desc' },
           take: 1,
-          include: { checkIn: true },
+          include: { checkIn: true, ticketType: true },
         },
       },
     });
@@ -330,6 +331,12 @@ export class AttendeesService {
       ? {
           id: latestPass.id,
           revokedAt: latestPass.revokedAt,
+          ticketType: latestPass.ticketType
+            ? {
+                id: latestPass.ticketType.id,
+                name: latestPass.ticketType.name,
+              }
+            : null,
         }
       : null,
     checkIn: latestPass?.checkIn ?? null,

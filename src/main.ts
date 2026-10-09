@@ -7,7 +7,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const swaggerConfig = new DocumentBuilder()
   .setTitle('Event Manager API')
   .setDescription('API documentation for the Event Manager application')
@@ -38,7 +38,7 @@ SwaggerModule.setup('api/docs', app, document);
     .filter(Boolean);
 
   app.enableCors({
-    origin: ['https://eventfront.pages.dev', 'http://localhost:3000'],
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

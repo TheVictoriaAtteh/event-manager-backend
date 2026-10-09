@@ -31,6 +31,7 @@ export class CheckInService {
             },
           },
         },
+        ticketType: true,
         checkIn: true,
       },
     });
@@ -74,8 +75,11 @@ export class CheckInService {
         id: pass.attendee.id,
         name: pass.attendee.name,
         email: pass.attendee.email,
-        
       },
+
+      ticketType: pass.ticketType
+        ? { id: pass.ticketType.id, name: pass.ticketType.name }
+        : null,
 
       event: {
         id: pass.attendee.event.id,
