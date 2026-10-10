@@ -1,7 +1,5 @@
 
-import {
-  Injectable, NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
 import { PassPdfService } from './pass-pdf.services';
@@ -105,61 +103,89 @@ export class PassesService {
       where: { id: paymentOrderId },
       include: {
         ticketType: true,
-        pass: {
+        attendees: {
           include: {
-            attendee: { include: { event: true } },
+            pass: {
+              include: {
+                attendee: { include: { event: true } },
+              },
+            },
           },
         },
       },
     });
 
-    if (!order || order.status !== 'PAID' || !order.pass) {
+    if (!order || order.status !== 'PAID' || order.attendees.length !== order.quantity) {
       throw new NotFoundException('Paid ticket pass not found');
     }
     if (order.emailSentAt) {
       return;
     }
 
-    const claimedAt = new Date();
-    const claim = await this.prisma.paymentOrder.updateMany({
-      where: {
-        id: order.id,
-        status: 'PAID',
-        emailSentAt: null,
-        OR: [
-          { emailClaimedAt: null },
-          { emailClaimedAt: { lt: new Date(claimedAt.getTime() - 5 * 60_000) } },
-        ],
-      },
-      data: { emailClaimedAt: claimedAt },
-    });
-    if (claim.count === 0) {
-      return;
+    for (const recipient of order.attendees) {
+      if (recipient.emailSentAt) {
+        continue;
+      }
+      if (!recipient.pass) {
+        throw new ConflictException('A paid ticket is missing its QR pass');
+      }
+
+      const claimedAt = new Date();
+      const claim = await this.prisma.paymentOrderAttendee.updateMany({
+        where: {
+          id: recipient.id,
+          emailSentAt: null,
+          OR: [
+            { emailClaimedAt: null },
+            {
+              emailClaimedAt: {
+                lt: new Date(claimedAt.getTime() - 5 * 60_000),
+              },
+            },
+          ],
+        },
+        data: { emailClaimedAt: claimedAt },
+      });
+      if (claim.count === 0) {
+        continue;
+      }
+
+      try {
+        const pass = recipient.pass;
+        const attendee = pass.attendee;
+        const pdfBuffer = await this.passPdfService.generatePassPdf(pass.id);
+        await this.emailService.sendEmail(
+          recipient.email,
+          `Your ${attendee.event.title} ticket`,
+          `
+            <h2>Your ticket is confirmed</h2>
+            <p>Hello ${this.escapeHtml(attendee.name)},</p>
+            <p>Your payment is confirmed for <strong>${this.escapeHtml(attendee.event.title)}</strong>.</p>
+            <p>Your ${this.escapeHtml(order.ticketType.name)} ticket is attached. Present its QR code at check-in.</p>
+          `,
+          [{ filename: `event-ticket-${pass.id}.pdf`, content: pdfBuffer }],
+        );
+        await this.prisma.paymentOrderAttendee.update({
+          where: { id: recipient.id },
+          data: { emailSentAt: new Date(), emailClaimedAt: null },
+        });
+      } catch (error) {
+        await this.prisma.paymentOrderAttendee.update({
+          where: { id: recipient.id },
+          data: { emailClaimedAt: null },
+        });
+        throw error;
+      }
     }
 
-    try {
-      const pdfBuffer = await this.passPdfService.generatePassPdf(order.pass.id);
-      await this.emailService.sendEmail(
-        order.pass.attendee.email,
-        `Your ${order.pass.attendee.event.title} ticket`,
-        `
-          <h2>Your ticket is confirmed</h2>
-          <p>Hello ${this.escapeHtml(order.pass.attendee.name)},</p>
-          <p>Your payment is confirmed for <strong>${this.escapeHtml(order.pass.attendee.event.title)}</strong>.</p>
-          <p>Your ${this.escapeHtml(order.ticketType.name)} ticket is attached. Present its QR code at check-in.</p>
-        `,
-        [{ filename: `event-ticket-${order.pass.id}.pdf`, content: pdfBuffer }],
-      );
-      await this.prisma.paymentOrder.update({
-        where: { id: order.id },
+    const undelivered = await this.prisma.paymentOrderAttendee.count({
+      where: { paymentOrderId: order.id, emailSentAt: null },
+    });
+    if (undelivered === 0) {
+      await this.prisma.paymentOrder.updateMany({
+        where: { id: order.id, status: 'PAID', emailSentAt: null },
         data: { emailSentAt: new Date(), emailClaimedAt: null },
       });
-    } catch (error) {
-      await this.prisma.paymentOrder.update({
-        where: { id: order.id },
-        data: { emailClaimedAt: null },
-      });
-      throw error;
     }
   }
 

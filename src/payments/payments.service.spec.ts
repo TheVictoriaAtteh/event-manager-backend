@@ -11,6 +11,7 @@ describe('PaymentsService', () => {
     ticketTypeId: 'ticket-id',
     attendeeName: 'Jane Doe',
     attendeeEmail: 'jane@example.com',
+    quantity: 1,
     amountMinor: 250000,
     currency: 'NGN',
     reference: 'evt_reference',
@@ -18,22 +19,50 @@ describe('PaymentsService', () => {
   };
 
   let service: PaymentsService;
+  let transaction: {
+    $executeRaw: jest.Mock;
+    paymentOrder: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    ticketType: { updateMany: jest.Mock };
+    paymentOrderAttendee: { findMany: jest.Mock };
+    attendee: { create: jest.Mock };
+    pass: { create: jest.Mock };
+  };
   let prisma: {
     event: { findUnique: jest.Mock };
     attendee: { findUnique: jest.Mock; findFirst: jest.Mock };
-    paymentOrder: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    paymentOrder: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
     ticketType: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
   let fetchMock: jest.SpyInstance;
 
   beforeEach(() => {
-    const transaction = {
+    transaction = {
       $executeRaw: jest.fn().mockResolvedValue(1),
       paymentOrder: {
-        create: jest.fn(({ data }) => Promise.resolve({ ...order, ...data })),
+        create: jest.fn(({ data }) =>
+          Promise.resolve({
+            ...order,
+            ...data,
+            attendees: data.attendees.create,
+          }),
+        ),
         findUnique: jest.fn().mockResolvedValue({ ...order, status: 'PENDING' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      ticketType: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      paymentOrderAttendee: { findMany: jest.fn().mockResolvedValue([]) },
+      attendee: { create: jest.fn(({ data }) => Promise.resolve({ id: data.email })) },
+      pass: { create: jest.fn().mockResolvedValue({ id: 'pass-id' }) },
     };
     prisma = {
       event: { findUnique: jest.fn().mockResolvedValue({ id: 'event-id' }) },
@@ -45,6 +74,7 @@ describe('PaymentsService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
         update: jest.fn(({ data }) => Promise.resolve({ ...order, ...data })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       ticketType: {
         findFirst: jest.fn().mockResolvedValue({
@@ -97,9 +127,8 @@ describe('PaymentsService', () => {
 
   it('initializes checkout using the stored ticket price and currency', async () => {
     const result = await service.createCheckout('public-token', {
-      name: order.attendeeName,
-      email: order.attendeeEmail,
       ticketTypeId: order.ticketTypeId,
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
     });
 
     expect(result).toMatchObject({
@@ -114,7 +143,113 @@ describe('PaymentsService', () => {
         body: expect.stringContaining('"amount":250000'),
       }),
     );
+    const initializationBody = JSON.parse(
+      String(fetchMock.mock.calls[0][1]?.body),
+    ) as { callback_url: string };
+    expect(initializationBody.callback_url).toBe(
+      'https://tickets.example.com/payment/return',
+    );
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the existing checkout when the same attendee retries the request', async () => {
+    const existing = {
+      ...order,
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      authorizationUrl: 'https://checkout.paystack.com/already-created',
+    };
+    prisma.paymentOrder.findFirst.mockResolvedValue(existing);
+
+    const result = await service.createCheckout('public-token', {
+      ticketTypeId: order.ticketTypeId,
+      attendees: [{ name: order.attendeeName, email: 'JANE@example.com' }],
+    });
+
+    expect(result).toMatchObject({
+      orderId: order.id,
+      reference: order.reference,
+      authorizationUrl: existing.authorizationUrl,
+      reused: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('reuses a multi-ticket checkout regardless of recipient query order', async () => {
+    const existing = {
+      ...order,
+      quantity: 2,
+      attendees: [
+        { name: 'John Doe', email: 'john@example.com' },
+        { name: 'Jane Doe', email: 'jane@example.com' },
+      ],
+      authorizationUrl: 'https://checkout.paystack.com/already-created',
+    };
+    prisma.paymentOrder.findFirst.mockResolvedValue(existing);
+
+    const result = await service.createCheckout('public-token', {
+      ticketTypeId: order.ticketTypeId,
+      attendees: [
+        { name: 'Jane Doe', email: 'jane@example.com' },
+        { name: 'John Doe', email: 'john@example.com' },
+      ],
+    });
+
+    expect(result.reused).toBe(true);
+    expect(result.authorizationUrl).toBe(existing.authorizationUrl);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('recovers checkout initialization using the original payment reference', async () => {
+    const pendingWithoutUrl = {
+      ...order,
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      authorizationUrl: null,
+      initializationClaimedAt: null,
+    };
+    prisma.paymentOrder.findFirst.mockResolvedValue(pendingWithoutUrl);
+
+    const result = await service.createCheckout('public-token', {
+      ticketTypeId: order.ticketTypeId,
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+    });
+
+    expect(result).toMatchObject({
+      orderId: order.id,
+      reference: order.reference,
+      authorizationUrl: 'https://checkout.paystack.com/example',
+      reused: true,
+    });
+    expect(prisma.paymentOrder.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: order.id, authorizationUrl: null }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.paystack.co/transaction/initialize',
+      expect.objectContaining({
+        body: expect.stringContaining(order.reference),
+      }),
+    );
+  });
+
+  it('rejects reuse when the active checkout has different ticket details', async () => {
+    prisma.paymentOrder.findFirst.mockResolvedValue({
+      ...order,
+      ticketTypeId: 'another-ticket',
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      authorizationUrl: 'https://checkout.paystack.com/already-created',
+    });
+
+    await expect(
+      service.createCheckout('public-token', {
+        ticketTypeId: order.ticketTypeId,
+        attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      }),
+    ).rejects.toThrow('different ticket details');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('rejects checkout when a limited ticket has sold out', async () => {
@@ -126,14 +261,80 @@ describe('PaymentsService', () => {
 
     await expect(
       service.createCheckout('public-token', {
-        name: order.attendeeName,
-        email: order.attendeeEmail,
         ticketTypeId: order.ticketTypeId,
+        attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
       }),
     ).rejects.toThrow('sold out');
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(transaction.paymentOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('reserves and charges the requested quantity and saves each recipient', async () => {
+    const result = await service.createCheckout('public-token', {
+      ticketTypeId: order.ticketTypeId,
+      attendees: [
+        { name: 'Jane Doe', email: 'jane@example.com' },
+        { name: 'John Doe', email: 'john@example.com' },
+      ],
+    });
+
+    expect(result.authorizationUrl).toBe('https://checkout.paystack.com/example');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.paystack.co/transaction/initialize',
+      expect.objectContaining({
+        body: expect.stringContaining('"amount":500000'),
+      }),
+    );
+    expect(transaction.$executeRaw.mock.calls[0]).toContain(2);
+    expect(transaction.paymentOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          quantity: 2,
+          amountMinor: 500000,
+          attendees: {
+            create: [
+              { name: 'Jane Doe', email: 'jane@example.com' },
+              { name: 'John Doe', email: 'john@example.com' },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('creates a pass for each attendee and increments sold inventory by quantity', async () => {
+    transaction.paymentOrder.findUnique.mockResolvedValue({
+      ...order,
+      quantity: 2,
+      status: 'PENDING',
+    });
+    transaction.paymentOrderAttendee.findMany.mockResolvedValue([
+      { id: 'recipient-1', name: 'Jane Doe', email: 'jane@example.com' },
+      { id: 'recipient-2', name: 'John Doe', email: 'john@example.com' },
+    ]);
+
+    const markOrderPaid = (
+      service as unknown as {
+        markOrderPaid: (orderId: string) => Promise<string>;
+      }
+    ).markOrderPaid.bind(service);
+    await expect(markOrderPaid(order.id)).resolves.toBe('PAID');
+
+    expect(transaction.ticketType.updateMany).toHaveBeenCalledWith({
+      where: { id: order.ticketTypeId, reservedCount: { gte: 2 } },
+      data: { reservedCount: { decrement: 2 }, soldCount: { increment: 2 } },
+    });
+    expect(transaction.attendee.create).toHaveBeenCalledTimes(2);
+    expect(transaction.pass.create).toHaveBeenCalledTimes(2);
+    expect(transaction.pass.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentOrderAttendeeId: 'recipient-2',
+        }),
+      }),
+    );
   });
 
   it('accepts only an HMAC signature for the exact webhook body', () => {

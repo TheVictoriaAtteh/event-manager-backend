@@ -153,8 +153,20 @@ Ticket type administration is authenticated and scoped to the event owner:
 server always uses the tier's stored price. A null or omitted ticket quantity
 means unlimited stock. Limited tiers reserve inventory during checkout and
 release it after a failed or expired payment. Checkouts expire after 30 minutes.
+Repeating the same checkout request for an email and ticket selection returns
+the existing Paystack checkout URL instead of creating another order. A request
+for a different ticket selection while a checkout is pending returns a conflict;
+the attendee must complete or wait for the existing checkout to expire first.
+Concurrent duplicate requests are protected by a unique active-checkout key, and
+an abandoned checkout initialization can be safely retried with its original
+Paystack reference after the initialization lease expires.
 After payment is verified with Paystack, the API creates the attendee and QR
-pass and emails the PDF. A browser redirect is not proof of payment; the
+pass for each ticket and emails each PDF to its matching attendee. Public
+checkouts accept between one and ten attendee name/email pairs in `attendees`
+alongside `ticketTypeId`; every attendee must use a unique email address. The
+checkout amount is the selected tier price multiplied by the number of
+attendees, and the public form limits the requested count to available stock.
+A browser redirect is not proof of payment; the
 frontend should show success only after `GET /payments/:reference` reports
 `PAID`. The order status endpoint can also be polled to retry delivery if email
 temporarily fails.
@@ -164,13 +176,13 @@ process. Configure these backend-only variables before enabling sales:
 
 - `PAYSTACK_SECRET_KEY`: Paystack test or live secret key.
 - `PAYSTACK_CALLBACK_URL`: optional frontend return URL; defaults to
-  `${FRONTEND_URL}/payment/callback`.
+  `${FRONTEND_URL}/payment/return`.
 - `RESEND_API_KEY` and `RESEND_FROM_EMAIL`: Resend API key and a verified sender.
 
 Register `https://<api-domain>/payments/webhook` in the Paystack dashboard.
 Webhook signatures are checked against the exact raw request body, then every
 successful notification is independently verified using Paystack's API.
 Never expose either Paystack or Resend secrets to the frontend. The frontend
-must render the public event/ticket list, collect attendee name/email/tier,
-redirect to the returned Paystack `authorizationUrl`, and query the reference
-on return. Frontend UI is outside this backend repository.
+renders the public event/ticket list, collects quantity and a name/email pair
+for every ticket, redirects to the returned Paystack `authorizationUrl`, and
+queries the reference on return.

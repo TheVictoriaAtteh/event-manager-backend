@@ -10,6 +10,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
+import type { PaymentOrder } from '@prisma/client';
 import type { PaymentStatus } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
@@ -67,6 +69,31 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createCheckout(token: string, dto: CreateTicketOrderDto) {
+    const attendees = dto.attendees?.map((attendee) => ({
+      name: attendee.name.trim(),
+      email: attendee.email.trim().toLowerCase(),
+    })) ?? (
+      dto.name?.trim() && dto.email?.trim()
+        ? [{ name: dto.name.trim(), email: dto.email.trim().toLowerCase() }]
+        : []
+    );
+    if (attendees.length === 0 || attendees.length > 10) {
+      throw new BadRequestException(
+        'Provide attendee name and email for 1 to 10 tickets',
+      );
+    }
+    if (
+      attendees.some((attendee) => !attendee.name || !attendee.email) ||
+      new Set(attendees.map((attendee) => attendee.email)).size !== attendees.length
+    ) {
+      throw new BadRequestException(
+        'Each ticket must have a name and a unique attendee email',
+      );
+    }
+    const primaryAttendee = attendees[0];
+    if (!primaryAttendee) {
+      throw new BadRequestException('At least one ticket attendee is required');
+    }
     const event = await this.prisma.event.findUnique({
       where: { publicRegistrationToken: token },
       select: { id: true },
@@ -82,7 +109,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const callbackUrl =
       this.config.get<string>('PAYSTACK_CALLBACK_URL') ??
       (callbackFrontendUrl
-        ? `${callbackFrontendUrl.replace(/\/+$/, '')}/payment/callback`
+        ? `${callbackFrontendUrl.replace(/\/+$/, '')}/payment/return`
         : undefined);
     if (!callbackUrl) {
       throw new ServiceUnavailableException(
@@ -90,9 +117,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const email = dto.email.trim().toLowerCase();
     const existingAttendee = await this.prisma.attendee.findFirst({
-      where: { eventId: event.id, email: { equals: email, mode: 'insensitive' } },
+      where: {
+        eventId: event.id,
+        OR: attendees.map(({ email }) => ({
+          email: { equals: email, mode: 'insensitive' as const },
+        })),
+      },
       select: { id: true },
     });
     if (existingAttendee) {
@@ -102,8 +133,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const pendingOrder = await this.prisma.paymentOrder.findFirst({
-      where: { eventId: event.id, attendeeEmail: email, status: 'PENDING' },
+      where: {
+        eventId: event.id,
+        attendeeEmail: primaryAttendee.email,
+        status: 'PENDING',
+      },
       orderBy: { createdAt: 'desc' },
+      include: { attendees: true },
     });
     if (pendingOrder) {
       if (pendingOrder.expiresAt <= new Date()) {
@@ -113,10 +149,46 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
             'This email already has a paid ticket for this event',
           );
         }
+        if (status === 'PENDING') {
+          throw new ConflictException(
+            'Your existing payment is still processing. Check its status before starting another checkout.',
+          );
+        }
       } else {
-        throw new ConflictException(
-          'A ticket checkout is already in progress for this email',
-        );
+        if (
+          pendingOrder.ticketTypeId !== dto.ticketTypeId ||
+          !this.attendeesMatch(pendingOrder.attendees, attendees)
+        ) {
+          throw new ConflictException(
+            'A checkout for this email already exists with different ticket details. Complete it or wait for it to expire before changing the selection.',
+          );
+        }
+        if (pendingOrder.authorizationUrl) {
+          return this.checkoutResponse(pendingOrder, true);
+        }
+        const claimedAt = new Date();
+        const claim = await this.prisma.paymentOrder.updateMany({
+          where: {
+            id: pendingOrder.id,
+            status: 'PENDING',
+            authorizationUrl: null,
+            OR: [
+              { initializationClaimedAt: null },
+              {
+                initializationClaimedAt: {
+                  lt: new Date(claimedAt.getTime() - 5 * 60_000),
+                },
+              },
+            ],
+          },
+          data: { initializationClaimedAt: claimedAt },
+        });
+        if (claim.count !== 1) {
+          throw new ConflictException(
+            'Your checkout is being initialized. Retry this request shortly.',
+          );
+        }
+        return this.initializeCheckout(pendingOrder, callbackUrl, true);
       }
     }
 
@@ -134,36 +206,86 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
     const reference = `evt_${randomUUID().replace(/-/g, '')}`;
     const expiresAt = new Date(now.getTime() + 30 * 60_000);
-    const order = await this.prisma.$transaction(async (tx) => {
-      const reserved = await tx.$executeRaw`
-        UPDATE "ticket_types"
-        SET "reservedCount" = "reservedCount" + 1
-        WHERE "id" = ${ticketType.id}
-          AND "isActive" = TRUE
-          AND ("quantity" IS NULL OR "soldCount" + "reservedCount" < "quantity")
-          AND ("saleStartsAt" IS NULL OR "saleStartsAt" <= NOW())
-          AND ("saleEndsAt" IS NULL OR "saleEndsAt" >= NOW())
-      `;
-      if (reserved !== 1) {
+    let order;
+    try {
+      order = await this.prisma.$transaction(async (tx) => {
+        const reserved = await tx.$executeRaw`
+          UPDATE "ticket_types"
+          SET "reservedCount" = "reservedCount" + ${attendees.length}
+          WHERE "id" = ${ticketType.id}
+            AND "isActive" = TRUE
+            AND ("quantity" IS NULL OR "soldCount" + "reservedCount" + ${attendees.length} <= "quantity")
+            AND ("saleStartsAt" IS NULL OR "saleStartsAt" <= NOW())
+            AND ("saleEndsAt" IS NULL OR "saleEndsAt" >= NOW())
+        `;
+        if (reserved !== 1) {
+          throw new ConflictException(
+            'This ticket type is sold out or no longer on sale',
+          );
+        }
+
+        const amountMinor = ticketType.priceMinor * attendees.length;
+        if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+          throw new BadRequestException('Ticket order total is invalid');
+        }
+
+        return tx.paymentOrder.create({
+          data: {
+            eventId: event.id,
+            ticketTypeId: ticketType.id,
+            attendeeName: primaryAttendee.name,
+            attendeeEmail: primaryAttendee.email,
+            quantity: attendees.length,
+            attendees: { create: attendees },
+            amountMinor,
+            currency: ticketType.currency,
+            reference,
+            activeCheckoutKey: `${event.id}:${primaryAttendee.email}`,
+            initializationClaimedAt: now,
+            expiresAt,
+          },
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const concurrentOrder = await this.prisma.paymentOrder.findFirst({
+          where: {
+            eventId: event.id,
+            attendeeEmail: primaryAttendee.email,
+            status: 'PENDING',
+          },
+          orderBy: { createdAt: 'desc' },
+          include: { attendees: true },
+        });
+        const matchesRequestedAttendees =
+          concurrentOrder !== null &&
+          concurrentOrder !== undefined &&
+          this.attendeesMatch(concurrentOrder.attendees, attendees);
+        if (
+          concurrentOrder?.authorizationUrl &&
+          concurrentOrder.ticketTypeId === dto.ticketTypeId &&
+          matchesRequestedAttendees
+        ) {
+          return this.checkoutResponse(concurrentOrder, true);
+        }
         throw new ConflictException(
-          'This ticket type is sold out or no longer on sale',
+          'A checkout for this email is already being created. Retry this request shortly.',
         );
       }
+      throw error;
+    }
 
-      return tx.paymentOrder.create({
-        data: {
-          eventId: event.id,
-          ticketTypeId: ticketType.id,
-          attendeeName: dto.name.trim(),
-          attendeeEmail: email,
-          amountMinor: ticketType.priceMinor,
-          currency: ticketType.currency,
-          reference,
-          expiresAt,
-        },
-      });
-    });
+    return this.initializeCheckout(order, callbackUrl, false);
+  }
 
+  private async initializeCheckout(
+    order: PaymentOrder,
+    callbackUrl: string,
+    reused: boolean,
+  ) {
     let initialized: PaystackResponse<{
       authorization_url: string;
       access_code: string;
@@ -177,7 +299,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }>>('/transaction/initialize', {
         method: 'POST',
         body: JSON.stringify({
-          email,
+          email: order.attendeeEmail,
           amount: order.amountMinor,
           currency: order.currency,
           reference: order.reference,
@@ -186,6 +308,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
             orderId: order.id,
             eventId: order.eventId,
             ticketTypeId: order.ticketTypeId,
+            quantity: order.quantity,
           },
         }),
       });
@@ -205,14 +328,46 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
     const updatedOrder = await this.prisma.paymentOrder.update({
       where: { id: order.id },
-      data: { authorizationUrl: initialized.data.authorization_url },
+      data: {
+        authorizationUrl: initialized.data.authorization_url,
+        initializationClaimedAt: null,
+      },
     });
+    return this.checkoutResponse(updatedOrder, reused);
+  }
+
+  private checkoutResponse(
+    order: {
+      id: string;
+      reference: string;
+      authorizationUrl: string | null;
+      expiresAt: Date;
+    },
+    reused: boolean,
+  ) {
     return {
-      orderId: updatedOrder.id,
-      reference: updatedOrder.reference,
-      authorizationUrl: updatedOrder.authorizationUrl,
-      expiresAt: updatedOrder.expiresAt,
+      orderId: order.id,
+      reference: order.reference,
+      authorizationUrl: order.authorizationUrl,
+      expiresAt: order.expiresAt,
+      reused,
     };
+  }
+
+  private attendeesMatch(
+    existing: Array<{ name: string; email: string }>,
+    requested: Array<{ name: string; email: string }>,
+  ): boolean {
+    if (existing.length !== requested.length) {
+      return false;
+    }
+    const existingByEmail = new Map(
+      existing.map((attendee) => [attendee.email.toLowerCase(), attendee]),
+    );
+    return requested.every((attendee) => {
+      const stored = existingByEmail.get(attendee.email);
+      return stored?.name === attendee.name;
+    });
   }
 
   async getPublicStatus(reference: string) {
@@ -355,7 +510,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
       const markedPaid = await tx.paymentOrder.updateMany({
         where: { id: order.id, status: 'PENDING' },
-        data: { status: 'PAID', paidAt: new Date() },
+        data: {
+          status: 'PAID',
+          paidAt: new Date(),
+          activeCheckoutKey: null,
+        },
       });
       if (markedPaid.count !== 1) {
         const currentOrder = await tx.paymentOrder.findUnique({
@@ -365,43 +524,45 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }
 
       const reservation = await tx.ticketType.updateMany({
-        where: { id: order.ticketTypeId, reservedCount: { gt: 0 } },
-        data: { reservedCount: { decrement: 1 }, soldCount: { increment: 1 } },
+        where: {
+          id: order.ticketTypeId,
+          reservedCount: { gte: order.quantity },
+        },
+        data: {
+          reservedCount: { decrement: order.quantity },
+          soldCount: { increment: order.quantity },
+        },
       });
       if (reservation.count !== 1) {
         throw new ConflictException('Ticket reservation is no longer available');
       }
 
-      const existingAttendee = await tx.attendee.findFirst({
-        where: {
-          eventId: order.eventId,
-          email: { equals: order.attendeeEmail, mode: 'insensitive' },
-        },
+      const orderAttendees = await tx.paymentOrderAttendee.findMany({
+        where: { paymentOrderId: order.id },
+        orderBy: { createdAt: 'asc' },
       });
-      const attendee =
-        existingAttendee ??
-        (await tx.attendee.upsert({
-          where: {
-            eventId_email: {
-              eventId: order.eventId,
-              email: order.attendeeEmail,
-            },
-          },
-          create: {
+      if (orderAttendees.length !== order.quantity) {
+        throw new ConflictException('Ticket order attendee details are incomplete');
+      }
+
+      for (const orderAttendee of orderAttendees) {
+        const attendee = await tx.attendee.create({
+          data: {
             eventId: order.eventId,
-            name: order.attendeeName,
-            email: order.attendeeEmail,
+            name: orderAttendee.name,
+            email: orderAttendee.email,
           },
-          update: {},
-        }));
-      await tx.pass.create({
-        data: {
-          attendeeId: attendee.id,
-          ticketTypeId: order.ticketTypeId,
-          paymentOrderId: order.id,
-          qrToken: randomUUID(),
-        },
-      });
+        });
+        await tx.pass.create({
+          data: {
+            attendeeId: attendee.id,
+            ticketTypeId: order.ticketTypeId,
+            paymentOrderId: order.id,
+            paymentOrderAttendeeId: orderAttendee.id,
+            qrToken: randomUUID(),
+          },
+        });
+      }
       return 'PAID';
     });
   }
@@ -419,14 +580,21 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }
       const updated = await tx.paymentOrder.updateMany({
         where: { id: order.id, status: 'PENDING' },
-        data: { status },
+        data: {
+          status,
+          activeCheckoutKey: null,
+          initializationClaimedAt: null,
+        },
       });
       if (updated.count !== 1) {
         return;
       }
       const released = await tx.ticketType.updateMany({
-        where: { id: order.ticketTypeId, reservedCount: { gt: 0 } },
-        data: { reservedCount: { decrement: 1 } },
+        where: {
+          id: order.ticketTypeId,
+          reservedCount: { gte: order.quantity },
+        },
+        data: { reservedCount: { decrement: order.quantity } },
       });
       if (released.count !== 1) {
         throw new ConflictException('Ticket reservation could not be released');
@@ -462,7 +630,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
     const updated = await this.prisma.paymentOrder.updateMany({
       where: { id: orderId, status: { in: ['FAILED', 'EXPIRED'] } },
-      data: { status: 'REFUNDED', refundedAt: new Date() },
+      data: {
+        status: 'REFUNDED',
+        refundedAt: new Date(),
+        activeCheckoutKey: null,
+      },
     });
     if (updated.count === 1) {
       return 'REFUNDED';

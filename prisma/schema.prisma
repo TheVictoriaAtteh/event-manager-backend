@@ -102,17 +102,19 @@ model Attendee {
 }
 
 model Pass {
-  id             String        @id @default(uuid())
-  attendeeId     String
-  ticketTypeId   String?
-  paymentOrderId String?       @unique
-  revokedAt      DateTime?
-  createdAt      DateTime      @default(now())
-  qrToken        String        @unique
-  checkIn        CheckIn?
-  attendee       Attendee      @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
-  ticketType     TicketType?   @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
-  paymentOrder   PaymentOrder? @relation(fields: [paymentOrderId], references: [id], onDelete: SetNull)
+  id                     String                @id @default(uuid())
+  attendeeId             String
+  ticketTypeId           String?
+  paymentOrderId         String?
+  paymentOrderAttendeeId String?               @unique
+  revokedAt              DateTime?
+  createdAt              DateTime              @default(now())
+  qrToken                String                @unique
+  checkIn                CheckIn?
+  attendee               Attendee              @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
+  ticketType             TicketType?           @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+  paymentOrder           PaymentOrder?         @relation(fields: [paymentOrderId], references: [id], onDelete: SetNull)
+  paymentOrderAttendee   PaymentOrderAttendee? @relation(fields: [paymentOrderAttendeeId], references: [id], onDelete: SetNull)
 
   @@index([attendeeId])
   @@index([ticketTypeId])
@@ -143,30 +145,50 @@ model TicketType {
 }
 
 model PaymentOrder {
-  id               String        @id @default(uuid())
-  eventId          String
-  ticketTypeId     String
-  attendeeName     String
-  attendeeEmail    String
-  amountMinor      Int
-  currency         String
-  reference        String        @unique
-  authorizationUrl String?
-  status           PaymentStatus @default(PENDING)
-  expiresAt        DateTime
-  paidAt           DateTime?
-  emailSentAt      DateTime?
-  emailClaimedAt   DateTime?
-  refundedAt       DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  event            Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticketType       TicketType    @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
-  pass             Pass?
+  id                      String                 @id @default(uuid())
+  eventId                 String
+  ticketTypeId            String
+  attendeeName            String
+  attendeeEmail           String
+  quantity                Int                    @default(1)
+  amountMinor             Int
+  currency                String
+  reference               String                 @unique
+  activeCheckoutKey       String?                @unique
+  authorizationUrl        String?
+  initializationClaimedAt DateTime?
+  status                  PaymentStatus          @default(PENDING)
+  expiresAt               DateTime
+  paidAt                  DateTime?
+  emailSentAt             DateTime?
+  emailClaimedAt          DateTime?
+  refundedAt              DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  event                   Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketType              TicketType             @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+  passes                  Pass[]
+  attendees               PaymentOrderAttendee[]
 
   @@index([eventId, attendeeEmail, status])
   @@index([status, expiresAt])
   @@map("payment_orders")
+}
+
+model PaymentOrderAttendee {
+  id             String       @id @default(uuid())
+  paymentOrderId String
+  name           String
+  email          String
+  emailSentAt    DateTime?
+  emailClaimedAt DateTime?
+  createdAt      DateTime     @default(now())
+  paymentOrder   PaymentOrder @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+  pass           Pass?
+
+  @@unique([paymentOrderId, email])
+  @@index([email])
+  @@map("payment_order_attendees")
 }
 
 enum PaymentStatus {
