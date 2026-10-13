@@ -182,6 +182,7 @@ model PaymentOrderAttendee {
   email          String
   emailSentAt    DateTime?
   emailClaimedAt DateTime?
+  emailDeliveryFailedAt DateTime?
   createdAt      DateTime     @default(now())
   paymentOrder   PaymentOrder @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
   pass           Pass?
@@ -196,6 +197,7 @@ enum PaymentStatus {
   PAID
   FAILED
   EXPIRED
+  REFUNDING
   REFUNDED
 }
 

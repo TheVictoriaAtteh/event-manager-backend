@@ -1,9 +1,15 @@
 
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
 import { PassPdfService } from './pass-pdf.services';
 import { EmailService } from '../email/email.service';
+import { EmailDeliveryError } from '../email/email.errors';
 import { CheckInService } from '../check-in/check-in.service';
 @Injectable()
 export class PassesService {
@@ -15,11 +21,11 @@ export class PassesService {
 
   ) {}
 
-  async verifyPass(qrToken: string) {
-    return this.checkInService.checkIn(qrToken);
+  async verifyPass(qrToken: string, organizerId: string) {
+    return this.checkInService.checkIn(qrToken, organizerId);
   }
 
-  async createPass(attendeeId: string) {
+  async createPass(attendeeId: string, organizerId: string) {
     // Find attendee and their event
     const attendee = await this.prisma.attendee.findUnique({
       where: {
@@ -36,6 +42,9 @@ export class PassesService {
 
     if (!attendee) {
       throw new NotFoundException('Attendee not found');
+    }
+    if (attendee.event.organizerId !== organizerId) {
+      throw new ForbiddenException('You do not have access to this attendee');
     }
 
     // Generate a unique QR token
@@ -98,6 +107,20 @@ export class PassesService {
     };
   }
 
+  async downloadPassPdf(passId: string, organizerId: string): Promise<Buffer> {
+    const pass = await this.prisma.pass.findFirst({
+      where: {
+        id: passId,
+        attendee: { event: { organizerId } },
+      },
+      select: { id: true },
+    });
+    if (!pass) {
+      throw new NotFoundException('Pass not found');
+    }
+    return this.passPdfService.generatePassPdf(pass.id);
+  }
+
   async emailPaidOrderPass(paymentOrderId: string): Promise<void> {
     const order = await this.prisma.paymentOrder.findUnique({
       where: { id: paymentOrderId },
@@ -123,7 +146,7 @@ export class PassesService {
     }
 
     for (const recipient of order.attendees) {
-      if (recipient.emailSentAt) {
+      if (recipient.emailSentAt || recipient.emailDeliveryFailedAt) {
         continue;
       }
       if (!recipient.pass) {
@@ -172,7 +195,12 @@ export class PassesService {
       } catch (error) {
         await this.prisma.paymentOrderAttendee.update({
           where: { id: recipient.id },
-          data: { emailClaimedAt: null },
+          data: {
+            emailClaimedAt: null,
+            ...(error instanceof EmailDeliveryError && !error.retryable && {
+              emailDeliveryFailedAt: new Date(),
+            }),
+          },
         });
         throw error;
       }

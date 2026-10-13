@@ -122,22 +122,40 @@ if (file) {
   //get all the events
 
   async findAll(organizerId: string) {
-      console.log('🔥 CURRENT ADMIN ID:', organizerId);
-      const events = await this.prisma.event.findMany({
+    const startsAt = performance.now();
+
+    const events = await this.prisma.event.findMany({
       where: {
         organizerId,
       },
-      orderBy: {date: 'asc'},
-include: {organizer: {select: {
+      orderBy: { date: 'asc' },
+      include: {
+        organizer: {
+          select: {
             id: true,
             name: true,
-            email: true},
-},
-hall: true,
-_count: {select: {attendees: true}},
+            email: true,
+          },
+        },
+        hall: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            capacity: true,
+          },
+        },
+        _count: { select: { attendees: true } },
       },
     });
-     console.log('🔥🔥🔥 NUMBER OF EVENTS:', events.length);
+
+    const duration = performance.now() - startsAt;
+
+    console.log(
+      `[PERFORMANCE] Events query completed in ${duration.toFixed(2)} ms`,
+    );
+
+    console.log(`[PERFORMANCE] Events returned: ${events.length}`);
     return events;
   }
 

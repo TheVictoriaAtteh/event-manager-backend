@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -14,7 +15,7 @@ export class CheckInService {
 
   async checkIn(
     qrToken: string,
-    scannedById?: string,
+    scannedById: string,
   ) {
     // 1. Find the pass using the QR token
     const pass = await this.prisma.pass.findUnique({
@@ -41,6 +42,10 @@ export class CheckInService {
       throw new NotFoundException(
         'Invalid QR code',
       );
+    }
+
+    if (pass.attendee.event.organizerId !== scannedById) {
+      throw new ForbiddenException('You do not have access to this event');
     }
 
     // 3. Check whether the pass has been revoked

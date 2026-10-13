@@ -9,6 +9,7 @@ import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
 import { UpdateTicketTypeDto } from './dto/update-ticket-type.dto';
 import { PaymentsService } from '../payments/payments.service';
 import { CreateTicketOrderDto } from '../payments/dto/create-ticket-order.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('events')
 export class EventsController {
@@ -37,6 +38,7 @@ getPublicEvent(@Param('token') token: string) {
 
 @Post('register/:token')
 @Public()
+@Throttle({ default: { limit: 5, ttl: 60_000 } })
 createTicketOrder(
   @Param('token') token: string,
   @Body() dto: CreateTicketOrderDto,

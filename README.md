@@ -49,6 +49,7 @@ npm run start:dev           # http://localhost:4000, Swagger at /api/docs
 | Variable                    | Purpose                                                            |
 | --------------------------- | ------------------------------------------------------------------ |
 | `PORT`                      | API port (default 4000)                                            |
+| `TRUST_PROXY_HOPS`          | Trusted reverse-proxy hops for client-IP rate limiting (default 0) |
 | `DATABASE_URL`              | PostgreSQL connection string (Prisma driver adapter + CLI)          |
 | `JWT_SECRET`                | Secret for JWTs issued by THIS backend — use a long random string |
 | `JWT_EXPIRES_IN`            | JWT lifetime, e.g. `1d`                                            |
@@ -130,9 +131,36 @@ computed from `startsAt`/`endsAt` and intentionally not stored.
 - No passwords, hashes or Supabase secrets in code, logs, or API responses.
 - `.env` is gitignored; `.env.example` is the committed template.
 - `SUPABASE_SERVICE_ROLE_KEY` must never be exposed to the frontend.
+- Public auth and ticket-payment endpoints have per-process rate limits.
+  Set `TRUST_PROXY_HOPS` only to the number of trusted proxies in front of the
+  API. For horizontally scaled deployments, also enforce shared limits at the
+  gateway because the in-process counters are not shared between instances.
 - Double check-ins are impossible at the DB level (`CheckIn.passId` unique).
 - Hall double-booking checks use the `@@index([hallId, startsAt, endsAt])`
   index and are enforced by the backend, never the frontend alone.
+- Pass issuance, PDF downloads, and check-in are scoped to the event owner.
+
+### Payment and operational boundaries
+
+- Ticket payments use Paystack-hosted checkout. This API does not collect or
+  store card numbers or CVV data; confirm the applicable PCI scope and
+  responsibilities with Paystack, the acquiring bank, and a qualified assessor.
+- This application is not a wallet or stored-value system. It has no account
+  balances, withdrawals, transfers, append-only accounting ledger, or automated
+  reconciliation. `PaymentOrder` tracks ticket-checkout state; it is not a
+  general ledger and must not be used as one.
+- Checkout reuse is keyed by event and normalized attendee email, with unique
+  provider references and conditional database state transitions. There is no
+  general-purpose idempotency-key API for arbitrary transfers.
+- Delayed successful payments for already-failed checkouts atomically claim a
+  `REFUNDING` state before requesting a refund, preventing concurrent webhook
+  retries from issuing duplicate refund requests. Refunds still require
+  provider-side reconciliation; an unconfirmed refund is logged for alerting
+  rather than retried blindly.
+- Supabase's auth rate limits are surfaced by the API. This application also
+  applies per-process request limits, but has no automated provider
+  reconciliation or transaction-anomaly alerting. Configure and verify shared
+  edge limits, provider reconciliation, and alerting before production use.
 
 ## Public ticket sales
 

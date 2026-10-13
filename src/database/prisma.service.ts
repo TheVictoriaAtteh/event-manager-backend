@@ -1,3 +1,4 @@
+
 import {
   Injectable,
   Logger,
@@ -6,8 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
-
+import { Prisma, PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
@@ -15,13 +15,30 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
 
   constructor(config: ConfigService) {
     const connectionString = config.get<string>('DATABASE_URL');
+
     if (!connectionString) {
       throw new ServiceUnavailableException(
         'DATABASE_URL is not configured. Set it in the backend environment.',
       );
     }
 
-    super({ adapter: new PrismaPg({ connectionString }) });
+    super({
+      adapter: new PrismaPg({ connectionString }),
+      log: [{ emit: 'event', level: 'query' }],
+    });
+
+    (this.$on as unknown as (
+  event: 'query',
+  callback: (event: Prisma.QueryEvent) => void,
+) => void)('query', (event) => {
+  this.logger.debug(
+    `Database query duration: ${event.duration.toFixed(2)} ms`,
+  );
+
+  this.logger.debug(
+    `SQL: ${event.query}`,
+  );
+});
   }
 
   async onModuleDestroy(): Promise<void> {

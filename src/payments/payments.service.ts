@@ -52,7 +52,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           error instanceof Error ? error.stack : String(error),
         );
       });
-    }, 60_000);
+    }, 300_000);
     this.expiryTimer.unref();
     void this.processBackgroundWork().catch((error: unknown) => {
       this.logger.error(
@@ -606,15 +606,30 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     orderId: string,
     transactionId: number,
   ): Promise<PaymentStatus> {
+    const claim = await this.prisma.paymentOrder.updateMany({
+      where: {
+        id: orderId,
+        status: { in: ['FAILED', 'EXPIRED'] },
+      },
+      data: { status: 'REFUNDING' },
+    });
+    if (claim.count !== 1) {
+      const currentOrder = await this.prisma.paymentOrder.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
+      if (!currentOrder) {
+        throw new NotFoundException('Ticket checkout not found');
+      }
+      return currentOrder.status;
+    }
+
     const order = await this.prisma.paymentOrder.findUnique({
       where: { id: orderId },
       select: { status: true },
     });
     if (!order) {
       throw new NotFoundException('Ticket checkout not found');
-    }
-    if (order.status !== 'FAILED' && order.status !== 'EXPIRED') {
-      return order.status;
     }
     const refund = await this.paystackRequest<
       PaystackResponse<{ id: number; status?: string }>
@@ -629,7 +644,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       throw new BadGatewayException('Paystack could not refund the late payment');
     }
     const updated = await this.prisma.paymentOrder.updateMany({
-      where: { id: orderId, status: { in: ['FAILED', 'EXPIRED'] } },
+      where: { id: orderId, status: 'REFUNDING' },
       data: {
         status: 'REFUNDED',
         refundedAt: new Date(),
@@ -643,7 +658,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id: orderId },
       select: { status: true },
     });
-    return currentOrder?.status ?? 'FAILED';
+    return currentOrder?.status ?? 'REFUNDING';
   }
 
   private async expirePendingOrders(): Promise<void> {
@@ -667,8 +682,31 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   private async processBackgroundWork(): Promise<void> {
     await this.expirePendingOrders();
+    const unconfirmedRefunds = await this.prisma.paymentOrder.findMany({
+      where: {
+        status: 'REFUNDING',
+        updatedAt: { lt: new Date(Date.now() - 5 * 60_000) },
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const order of unconfirmedRefunds) {
+      this.logger.error(
+        `Paystack refund confirmation is pending for payment order ${order.id}`,
+      );
+    }
+
     const undelivered = await this.prisma.paymentOrder.findMany({
-      where: { status: 'PAID', emailSentAt: null },
+      where: {
+        status: 'PAID',
+        emailSentAt: null,
+        attendees: {
+          some: {
+            emailSentAt: null,
+            emailDeliveryFailedAt: null,
+          },
+        },
+      },
       select: { id: true },
       take: 50,
     });

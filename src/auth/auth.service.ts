@@ -159,10 +159,6 @@ export class AuthService {
 
     const localUser = await this.syncUser(supabaseUser);
 
-    // TEMPORARY DEBUG LOGS
-    console.log('LOGIN USER:', localUser);
-    console.log('LOGIN USER ROLE:', localUser.role);
-
     return {
       accessToken: session.access_token,
       tokenType: 'Bearer',

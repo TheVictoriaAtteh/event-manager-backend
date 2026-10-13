@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { PaymentsService } from './payments.service';
 
@@ -23,6 +24,7 @@ export class PaymentsController {
 
   @Post('webhook')
   @Public()
+  @SkipThrottle()
   async webhook(
     @Req() request: RawBodyRequest<Request>,
     @Headers('x-paystack-signature') signature?: string,
@@ -41,6 +43,7 @@ export class PaymentsController {
 
   @Get(':reference')
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   getStatus(@Param('reference') reference: string) {
     return this.paymentsService.getPublicStatus(reference);
   }

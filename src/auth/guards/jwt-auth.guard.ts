@@ -29,9 +29,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest<TUser = unknown>(err: unknown, user: TUser): TUser {
-
-  console.log('🔥 JWT ERROR:', err);
-  console.log('🔥 JWT USER:', user);
     if (err || !user) {
       // Preserve structured errors thrown by the strategy (e.g. TOKEN_EXPIRED).
       if (err instanceof UnauthorizedException) {

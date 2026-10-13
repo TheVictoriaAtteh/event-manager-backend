@@ -19,6 +19,13 @@ const document = SwaggerModule.createDocument(app, swaggerConfig);
 
 SwaggerModule.setup('api/docs', app, document);
   const config = app.get(ConfigService);
+const trustProxyHops = Number(config.get<string>('TRUST_PROXY_HOPS') ?? 0);
+if (!Number.isSafeInteger(trustProxyHops) || trustProxyHops < 0) {
+  throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
+}
+if (trustProxyHops > 0) {
+  app.getHttpAdapter().getInstance().set('trust proxy', trustProxyHops);
+}
 
   app.useGlobalPipes(
     new ValidationPipe({

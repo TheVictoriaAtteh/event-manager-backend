@@ -36,6 +36,7 @@ describe('PaymentsService', () => {
     attendee: { findUnique: jest.Mock; findFirst: jest.Mock };
     paymentOrder: {
       findFirst: jest.Mock;
+      findUnique: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
@@ -44,6 +45,7 @@ describe('PaymentsService', () => {
     $transaction: jest.Mock;
   };
   let fetchMock: jest.SpyInstance;
+  let passes: { emailPaidOrderPass: jest.Mock };
 
   beforeEach(() => {
     transaction = {
@@ -72,6 +74,7 @@ describe('PaymentsService', () => {
       },
       paymentOrder: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue({ ...order, status: 'PENDING' }),
         create: jest.fn(),
         update: jest.fn(({ data }) => Promise.resolve({ ...order, ...data })),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -95,7 +98,7 @@ describe('PaymentsService', () => {
         })[key],
       ),
     };
-    const passes = { emailPaidOrderPass: jest.fn() };
+    passes = { emailPaidOrderPass: jest.fn() };
 
     service = new PaymentsService(
       prisma as unknown as PrismaService,
@@ -171,6 +174,31 @@ describe('PaymentsService', () => {
       authorizationUrl: existing.authorizationUrl,
       reused: true,
     });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('returns one checkout when ten duplicate requests arrive together', async () => {
+    const existing = {
+      ...order,
+      attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      authorizationUrl: 'https://checkout.paystack.com/already-created',
+    };
+    prisma.paymentOrder.findFirst.mockResolvedValue(existing);
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        service.createCheckout('public-token', {
+          ticketTypeId: order.ticketTypeId,
+          attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+        }),
+      ),
+    );
+
+    expect(new Set(results.map((result) => result.reference))).toEqual(
+      new Set([order.reference]),
+    );
+    expect(results.every((result) => result.reused)).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -346,5 +374,267 @@ describe('PaymentsService', () => {
     expect(service.verifyWebhookSignature(body, signature)).toBe(true);
     expect(service.verifyWebhookSignature(body, 'f'.repeat(128))).toBe(false);
     expect(service.verifyWebhookSignature(undefined, signature)).toBe(false);
+  });
+
+  it.each([0, -1, Number.POSITIVE_INFINITY])(
+    'rejects invalid stored ticket prices before calling Paystack (%s)',
+    async (priceMinor) => {
+      prisma.ticketType.findFirst.mockResolvedValue({
+        id: 'ticket-id',
+        priceMinor,
+        currency: 'NGN',
+        saleStartsAt: null,
+        saleEndsAt: null,
+      });
+
+      await expect(
+        service.createCheckout('public-token', {
+          ticketTypeId: order.ticketTypeId,
+          attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+        }),
+      ).rejects.toThrow('Ticket order total is invalid');
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(transaction.paymentOrder.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps a timed-out checkout pending so its provider reference can be verified', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('provider request timed out'));
+
+    await expect(
+      service.createCheckout('public-token', {
+        ticketTypeId: order.ticketTypeId,
+        attendees: [{ name: order.attendeeName, email: order.attendeeEmail }],
+      }),
+    ).rejects.toThrow('Paystack is temporarily unavailable');
+
+    expect(transaction.paymentOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          reference: expect.stringMatching(/^evt_[a-f0-9]{32}$/),
+        }),
+      }),
+    );
+    expect(transaction.paymentOrder.updateMany).not.toHaveBeenCalled();
+
+    prisma.paymentOrder.findUnique.mockResolvedValue({
+      ...order,
+      status: 'PENDING',
+    });
+    transaction.paymentOrderAttendee.findMany.mockResolvedValue([
+      {
+        id: 'order-attendee-id',
+        name: order.attendeeName,
+        email: order.attendeeEmail,
+      },
+    ]);
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            status: true,
+            message: 'Verification successful',
+            data: {
+              id: 123,
+              reference: order.reference,
+              status: 'success',
+              amount: order.amountMinor,
+              currency: order.currency,
+              metadata: { orderId: order.id },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    const refreshOrder = (
+      service as unknown as {
+        refreshOrder: (reference: string) => Promise<string>;
+      }
+    ).refreshOrder.bind(service);
+
+    await expect(refreshOrder(order.reference)).resolves.toBe('PAID');
+  });
+
+  it('makes repeated success webhooks create only one paid order and one set of passes', async () => {
+    let status = 'PENDING';
+    const storedOrder = { ...order, status: 'PENDING' };
+    prisma.paymentOrder.findUnique.mockImplementation(() =>
+      Promise.resolve({ ...storedOrder, status }),
+    );
+    transaction.paymentOrder.findUnique.mockImplementation(() =>
+      Promise.resolve({ ...storedOrder, status }),
+    );
+    transaction.paymentOrder.updateMany.mockImplementation(
+      ({
+        where,
+        data,
+      }: {
+        where: { status: string };
+        data: { status: string };
+      }) => {
+        if (status !== where.status) {
+          return Promise.resolve({ count: 0 });
+        }
+        status = data.status;
+        return Promise.resolve({ count: 1 });
+      },
+    );
+    transaction.paymentOrderAttendee.findMany.mockResolvedValue([
+      {
+        id: 'order-attendee-id',
+        name: order.attendeeName,
+        email: order.attendeeEmail,
+      },
+    ]);
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+        JSON.stringify({
+          status: true,
+          message: 'Verification successful',
+          data: {
+            id: 123,
+            reference: order.reference,
+            status: 'success',
+            amount: order.amountMinor,
+            currency: order.currency,
+            metadata: { orderId: order.id },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        service.handleWebhook('charge.success', order.reference),
+      ),
+    );
+
+    expect(status).toBe('PAID');
+    expect(transaction.attendee.create).toHaveBeenCalledTimes(1);
+    expect(transaction.pass.create).toHaveBeenCalledTimes(1);
+    expect(passes.emailPaidOrderPass).toHaveBeenCalled();
+  });
+
+  it('refunds a delayed success for an order already marked failed', async () => {
+    prisma.paymentOrder.findUnique.mockResolvedValue({
+      ...order,
+      status: 'FAILED',
+    });
+    fetchMock.mockImplementation(
+      async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).endsWith('/refund')
+              ? { status: true, message: 'Refund queued', data: { id: 456 } }
+              : {
+                  status: true,
+                  message: 'Verification successful',
+                  data: {
+                    id: 123,
+                    reference: order.reference,
+                    status: 'success',
+                    amount: order.amountMinor,
+                    currency: order.currency,
+                    metadata: { orderId: order.id },
+                  },
+                },
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+
+    await expect(
+      service.handleWebhook('charge.success', order.reference),
+    ).resolves.toEqual({ received: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/refund');
+    expect(transaction.pass.create).not.toHaveBeenCalled();
+  });
+
+  it('claims a late-payment refund once when duplicate webhooks arrive together', async () => {
+    let status = 'FAILED';
+    const storedOrder = { ...order, status: 'FAILED' };
+    prisma.paymentOrder.findUnique.mockImplementation(() =>
+      Promise.resolve({ ...storedOrder, status }),
+    );
+    transaction.paymentOrder.findUnique.mockImplementation(() =>
+      Promise.resolve({ ...storedOrder, status }),
+    );
+    prisma.paymentOrder.updateMany.mockImplementation(
+      ({
+        where,
+        data,
+      }: {
+        where: { status: string | { in: string[] } };
+        data: { status: string };
+      }) => {
+        const matches =
+          typeof where.status === 'string'
+            ? status === where.status
+            : where.status.in.includes(status);
+        if (!matches) {
+          return Promise.resolve({ count: 0 });
+        }
+        status = data.status;
+        return Promise.resolve({ count: 1 });
+      },
+    );
+    fetchMock.mockImplementation(
+      async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).endsWith('/refund')
+              ? { status: true, message: 'Refund queued', data: { id: 456 } }
+              : {
+                  status: true,
+                  message: 'Verification successful',
+                  data: {
+                    id: 123,
+                    reference: order.reference,
+                    status: 'success',
+                    amount: order.amountMinor,
+                    currency: order.currency,
+                    metadata: { orderId: order.id },
+                  },
+                },
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        service.handleWebhook('charge.success', order.reference),
+      ),
+    );
+
+    expect(status).toBe('REFUNDED');
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/refund')),
+    ).toHaveLength(1);
+  });
+
+  it('propagates a mid-transaction database failure instead of returning paid', async () => {
+    transaction.ticketType.updateMany.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const markOrderPaid = (
+      service as unknown as {
+        markOrderPaid: (orderId: string) => Promise<string>;
+      }
+    ).markOrderPaid.bind(service);
+
+    await expect(markOrderPaid(order.id)).rejects.toThrow('database unavailable');
+    expect(transaction.paymentOrder.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: order.id, status: 'PENDING' },
+        data: expect.objectContaining({ status: 'PAID' }),
+      }),
+    );
+    expect(transaction.pass.create).not.toHaveBeenCalled();
   });
 });
